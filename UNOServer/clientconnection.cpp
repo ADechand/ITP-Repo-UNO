@@ -1,22 +1,26 @@
 #include "clientconnection.h"
-#include <string.h>
+#include <string>
 #include <qvector.h>
 #include <thread>
 #include <qmutex.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <QString>
+#include <QByteArray>
+#include <iostream>
 using namespace std;
 
 
 ClientConnection::ClientConnection(int sock) : socket(sock) {}
 
 void ClientConnection::sendMessage(const QString& msg) {
+    const char* cmsg = msg.toUtf8().constData();
 
-    send(socket, msg.c_str(), msg.size(), 0);
+    send(socket, cmsg, msg.size(), 0);
 
 }
 
-string ClientConnection::receiveMessage() {
+QString ClientConnection::receiveMessage() {
 
     char buffer[1024];
 
@@ -26,7 +30,7 @@ string ClientConnection::receiveMessage() {
 
         buffer[bytes] = '\0';
 
-        return string(buffer);
+        return QString(buffer);
 
     }
 
