@@ -5,6 +5,11 @@
 #include <qmutex.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <cstdlib>
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <vector>
 using namespace std;
 
 Server::Server(int p) : port(p), serverSocket(-1) {}
@@ -83,9 +88,9 @@ void Server::handleClient(ClientConnection* client) {
 
     while (true) {
 
-        string msg = client->receiveMessage();
+        QString msg = client->receiveMessage();
 
-        if (msg.empty()) {
+        if (msg.isEmpty()) {
 
             cout << "Client getrennt.\n";
 
@@ -94,8 +99,8 @@ void Server::handleClient(ClientConnection* client) {
             break;
 
         }
-
-        cout << "Nachricht erhalten: " << msg << "\n";
+        std::string stdStr = msg.toStdString();
+        cout << "Nachricht erhalten: " << stdStr << "\n";
 
         broadcastMessage("Echo: " + msg);
 
@@ -103,7 +108,7 @@ void Server::handleClient(ClientConnection* client) {
 
 }
 
-void Server::broadcastMessage(const string& msg) {
+void Server::broadcastMessage(const QString& msg) {
 
     lock_guard<QMutex> lock(clientMutex);
 
