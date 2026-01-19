@@ -2,7 +2,7 @@
 #define SERVER_H
 #include <qvector.h>
 #include <qmutex.h>
-#include <string.h>
+#include <qstring.h>
 #include <clientconnection.h>
 
 class Server
@@ -14,10 +14,10 @@ private:
     QMutex clientMutex;
 public:
     Server(int p);
-    bool tart();
+    bool start();
     void acceptConnections();
     void handleClient(ClientConnection* client);
-    void broadcastMessage(const string& msg);
+    void broadcastMessage(const QString& msg);
     void shutdown();
 };
 
