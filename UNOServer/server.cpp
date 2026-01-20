@@ -10,6 +10,7 @@
 #include <thread>
 #include <mutex>
 #include <vector>
+#include <QDebug>
 using namespace std;
 
 Server::Server(int p) : port(p), serverSocket(-1) {}
@@ -17,6 +18,7 @@ Server::Server(int p) : port(p), serverSocket(-1) {}
 bool Server::start() {
 
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+
 
     if (serverSocket < 0) {
 
@@ -50,7 +52,9 @@ bool Server::start() {
 
     }
 
-        cout << "Server läuft auf Port " << port << "...\n";
+    qDebug() << "Server läuft auf Port " << port << "...\n";
+
+    std::thread(&Server::acceptConnections, this).detach();
 
     return true;
 
@@ -74,7 +78,7 @@ void Server::acceptConnections() {
 
             clients.push_back(client);
 
-            cout << "Neuer Client verbunden!\n";
+            qDebug() << "Neuer Client verbunden!\n";
 
             thread(&Server::handleClient, this, client).detach();
 
@@ -92,15 +96,15 @@ void Server::handleClient(ClientConnection* client) {
 
         if (msg.isEmpty()) {
 
-            cout << "Client getrennt.\n";
+            qDebug() << "Client getrennt.\n";
 
             close(client->socket);
 
             break;
 
         }
-        std::string stdStr = msg.toStdString();
-        cout << "Nachricht erhalten: " << stdStr << "\n";
+        string stdStr = msg.toStdString();
+        qDebug() << "Nachricht erhalten: " << stdStr << "\n";
 
         broadcastMessage("Echo: " + msg);
 
@@ -124,7 +128,7 @@ void Server::shutdown() {
 
     close(serverSocket);
 
-    cout << "Server heruntergefahren.\n";
+    qDebug() << "Server heruntergefahren.\n";
 
 }
 
