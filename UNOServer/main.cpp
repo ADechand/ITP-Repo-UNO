@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <qthread.h>
+#include <QtCore>
 #include <server.h>
 using namespace std;
 
@@ -19,6 +20,7 @@ int main() {
     if (server.start()) {
 
         server.acceptConnections();
+        qDebug() << "Hallo";
 
     }
 
