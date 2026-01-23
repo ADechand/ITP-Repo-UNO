@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/">
+        <file>StartPage.qml</file>
+        <file>StartMenu.qml</file>
+        <file>JoinPage.qml</file>
+        <file>GamePage.qml</file>
+    </qresource>
+    <qresource prefix="/img">
+        <file>assets/images/UNOHintergrund.jpg</file>
+    </qresource>
+</RCC>

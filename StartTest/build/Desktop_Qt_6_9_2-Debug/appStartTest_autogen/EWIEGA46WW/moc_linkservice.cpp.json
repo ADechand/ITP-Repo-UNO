@@ -1,0 +1,64 @@
+{
+    "classes": [
+        {
+            "className": "LinkService",
+            "lineNumber": 6,
+            "methods": [
+                {
+                    "access": "public",
+                    "index": 3,
+                    "name": "createCopyAndSendCode",
+                    "returnType": "void"
+                }
+            ],
+            "object": true,
+            "qualifiedClassName": "LinkService",
+            "signals": [
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "message",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 0,
+                    "name": "info",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "message",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 1,
+                    "name": "error",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "code",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 2,
+                    "name": "codeCreated",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QObject"
+                }
+            ]
+        }
+    ],
+    "inputFile": "linkservice.h",
+    "outputRevision": 69
+}
