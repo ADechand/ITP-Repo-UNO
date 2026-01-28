@@ -4,6 +4,11 @@ project(StartTest VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(CARDS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/images/cards")
+if(NOT EXISTS "${CARDS_DIR}")
+    message(FATAL_ERROR "Cards folder not found: ${CARDS_DIR}")
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Quick)
 
 qt_standard_project_setup(REQUIRES 6.8)
@@ -12,7 +17,9 @@ qt_add_executable(appStartTest
     main.cpp
     resources.qrc
     linkservice.cpp
+    gameclient.cpp
 )
+
 
 qt_add_qml_module(appStartTest
     URI StartTest
@@ -23,13 +30,30 @@ qt_add_qml_module(appStartTest
         StartPage.qml
         JoinPage.qml
         GamePage.qml
-        SOURCES linkservice.h linkservice.cpp
+    SOURCES
+        linkservice.h linkservice.cpp
+        gameclient.h gameclient.cpp
 )
+
+
+file(GLOB CARD_IMAGES_REL CONFIGURE_DEPENDS
+    RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "assets/images/cards/*.png"
+    "assets/images/cards/*.PNG"
+    "assets/images/cards/*.jpg"
+    "assets/images/cards/*.JPG"
+    "assets/images/cards/*.jpeg"
+    "assets/images/cards/*.JPEG"
+)
+
+message(STATUS "Found card images: ${CARD_IMAGES_REL}")
 
 qt_add_resources(appStartTest "app_resources"
     PREFIX "/"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES
         assets/images/UNOHintergrund.jpg
+        ${CARD_IMAGES_REL}
 )
 
 
@@ -44,8 +68,6 @@ set_target_properties(appStartTest PROPERTIES
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
 )
-
-target_sources(appStartTest PRIVATE resources.qrc)
 
 target_link_libraries(appStartTest
     PRIVATE Qt6::Quick Qt6::Network

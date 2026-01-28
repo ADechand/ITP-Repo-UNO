@@ -5,17 +5,41 @@ Item {
     id: root
     anchors.fill: parent
 
+    // Server config von Main.qml
+    property string serverHost: "127.0.0.1"
+    property int serverPort: 12345
+    property string _pendingStartCode: ""
+    // Server-Spielcode (wichtig fürs Starten)
+    property string hostCode: ""
+
     signal goBack()
     signal copyLinkRequested()
-    signal createCopyAndSendCode()
     signal openSkins()
     signal startGame()
+
+
+
+    Connections {
+        target: gameClient
+        function onConnectedChanged() {
+            if (gameClient.connected && root._pendingStartCode.length > 0) {
+                const c = root._pendingStartCode
+                root._pendingStartCode = ""
+                gameClient.startGame(c)
+            }
+        }
+
+        function onGameCreated(code) {
+            root.hostCode = code
+            console.log("HOST CODE:", code)
+        }
+    }
 
 
     // Hintergrund
     Image {
         anchors.fill: parent
-        source: "qrc:/assets/images/UNOHintergrund.jpg"   // <-- anpassen
+        source: "qrc:/assets/images/UNOHintergrund.jpg"
         fillMode: Image.PreserveAspectCrop
         smooth: true
     }
@@ -39,7 +63,7 @@ Item {
         onClicked: root.goBack()
     }
 
-    // Link kopieren (links, mittig)
+    // Link kopieren (links, mittig) -> jetzt: Server connect + create_game + optional Clipboard via LinkService
     Button {
         id: copyBtn
         text: "Link kopieren"
@@ -57,8 +81,13 @@ Item {
             border.width: 2
         }
 
-        onClicked: linkService.createCopyAndSendCode()
-
+        onClicked: {
+            if (!gameClient.connected) {
+                gameClient.connectToServer(root.serverHost, root.serverPort)
+            }
+            root.hostCode = ""      // neu anfordern
+            gameClient.createGame() // Code kommt via onGameCreated
+        }
     }
 
     // Skins (rechts, mittig)
@@ -82,7 +111,7 @@ Item {
         onClicked: root.openSkins()
     }
 
-    // Zentrum: Formular
+    // Zentrum: Formular (unverändert)
     Item {
         id: form
         width: 560
@@ -90,7 +119,6 @@ Item {
         anchors.centerIn: parent
         anchors.verticalCenterOffset: 40
 
-        // Tab "Spielername"
         Rectangle {
             width: 200
             height: 34
@@ -108,7 +136,6 @@ Item {
             }
         }
 
-        // Name Input
         TextField {
             id: nameField
             width: form.width
@@ -118,16 +145,9 @@ Item {
             font.pixelSize: 20
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
-
-            background: Rectangle {
-                color: "white"
-                border.width: 2
-                border.color: "black"
-            }
+            background: Rectangle { color: "white"; border.width: 2; border.color: "black" }
         }
-        signal startGame()
 
-        // Spieleranzahl Label
         Rectangle {
             width: 240
             height: 44
@@ -145,8 +165,6 @@ Item {
             }
         }
 
-
-        // Spieleranzahl SpinBox
         SpinBox {
             id: countSpin
             width: 220
@@ -157,14 +175,9 @@ Item {
             to: 10
             value: 4
 
-            background: Rectangle {
-                color: "white"
-                border.width: 2
-                border.color: "black"
-            }
+            background: Rectangle { color: "white"; border.width: 2; border.color: "black" }
         }
 
-        // Spiel starten Button
         Button {
             id: startBtn
             text: "Spiel starten"
@@ -173,13 +186,44 @@ Item {
             x: (form.width - width) / 2
             y: 170
             font.pixelSize: 22
-            onClicked: root.startGame()
 
-            background: Rectangle {
-                color: "#75f0ff"
-                border.width: 2
-                border.color: "black"
+            background: Rectangle { color: "#75f0ff"; border.width: 2; border.color: "black" }
+
+            onClicked: {
+                const code = root.hostCode.trim()
+                if (code.length === 0) {
+                    console.log("Kein hostCode gesetzt!")
+                    return
+                }
+
+                if (!gameClient.connected) {
+                    root._pendingStartCode = code
+                    gameClient.connectToServer(root.serverHost, root.serverPort)
+                    return
+                }
+
+                gameClient.startGame(code)
             }
+
+        }
+    }
+
+    // Auto-connect beim Öffnen (damit “Nicht verbunden” nicht dauernd kommt)
+    Component.onCompleted: {
+        if (!gameClient.connected) {
+            gameClient.connectToServer(root.serverHost, root.serverPort)
+        }
+    }
+
+    Connections {
+        target: gameClient
+
+        function onGameCreated(code) {
+            root.hostCode = code
+            // optional: in Zwischenablage kopieren über deinen bestehenden Service:
+            // (dein LinkService generiert sonst eigenen Code, daher hier NICHT createCopyAndSendCode nutzen)
+            // Wenn du Clipboard exakt willst: sag kurz, dann gebe ich dir copyToClipboard(code) für LinkService.
+            console.log("HOST CODE:", code)
         }
     }
 }

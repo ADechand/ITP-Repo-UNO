@@ -1,138 +1,157 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
-import QtQuick.Layouts 1.15
 
 Item {
     id: root
     anchors.fill: parent
 
-    // Navigation
     signal goBack()
 
-    // ---- Spiel-Events (später an Server koppeln) ----
-    signal cardPlayed(string cardId)     // wenn Spieler Karte gelegt hat
-    signal drawRequested()               // wenn Spieler "Karte ziehen" nutzt
-    signal unoPressed()                  // wenn UNO gedrückt wurde
-    signal penaltyDraw(int count)        // wenn Strafe gezogen wurde (z.B. 2)
+    // UNO-Logik
+    property bool mustSayUno: false
+    property bool unoConfirmed: false
+    property int unoPenaltyCards: 2
+    property int unoWindowMs: 2500
+    property int opponentsCount: 6   // Anzahl Gegner (später vom Server)
 
-    // ---- UI/Spielzustand (Prototyp) ----
-    property int opponentsCount: 6
-    property int handCount: 2            // wie viele Karten hat der Spieler unten
-    property bool mustSayUno: false      // nach vorletzter Karte -> UNO nötig
-    property bool unoConfirmed: false    // ob UNO rechtzeitig gedrückt wurde
-    property int unoPenaltyCards: 2      // Strafe bei vergessenem UNO
-    property int unoWindowMs: 2500       // Zeitfenster fürs UNO drücken
-    property bool unoDeclared: false
+    // Hand als Model (statt nur handCount)
+    ListModel { id: handModel }
+    property int handCount: handModel.count
 
-    // Hintergund (wie Mockup: rosa)
-    Rectangle {
-        anchors.fill: parent
-        color: "#ff9fa0"
+    // Ablage (zeigt zuletzt gespielte Karte)
+    property string lastDiscard: ""
+
+    Connections {
+        target: gameClient
+
+        function onGameInit(code, hand, discardTop, drawCount, players, yourIndex) {
+            handModel.clear()
+            for (var i = 0; i < hand.length; i++) {
+                handModel.append({ src: "qrc:/assets/images/cards/" + hand[i] })
+            }
+
+            if (discardTop && discardTop.length > 0)
+                root.lastDiscard = "qrc:/assets/images/cards/" + discardTop
+
+            root.opponentsCount = Math.max(0, players - 1)
+            infoBanner.show("Game gestartet! Spieler: " + players)
+            console.log("INIT OK:", code, "hand=", hand.length, "discard=", discardTop)
+        }
+
+        function onConnectedChanged() {
+            // WICHTIG: nicht sofort rauswerfen, sonst flackert alles.
+            // Nur informieren:
+            if (!gameClient.connected) {
+                infoBanner.show("Verbindung verloren")
+                // optional: nach 1 Sekunde zurück
+                // Qt.createQmlObject('import QtQuick 2.15; Timer { interval: 1000; running: true; repeat: false; onTriggered: root.goBack() }', root, 'tmpTimer')
+            }
+        }
+
+        function onError(msg) {
+            infoBanner.show("Server: " + msg)
+            console.log("Server error:", msg)
+        }
     }
 
-    // --- Zurück Button (oben links) ---
+
+    Rectangle { anchors.fill: parent; color: "#ff9fa0" }
+
     Button {
-        id: backBtn
         text: "Go Back"
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.leftMargin: 16
         anchors.topMargin: 12
-
-        background: Rectangle {
-            color: "white"
-            border.color: "black"
-            border.width: 2
-            radius: 4
-        }
+        background: Rectangle { color: "white"; border.color: "black"; border.width: 2; radius: 4 }
         onClicked: root.goBack()
     }
 
-    // --- Gegnerkarten oben (graue Rückseiten) ---
-    Row {
-        id: enemyRow
-        spacing: 18
-        anchors.top: parent.top
-        anchors.topMargin: 40
+    // Info Banner
+    Rectangle {
+        id: infoBanner
+        width: 360; height: 44; radius: 8
+        color: "white"; border.color: "black"; border.width: 2
         anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: playerHand.top
+        anchors.bottomMargin: 14
+        opacity: 0
+        visible: opacity > 0
 
-        Repeater {
-            model: opponentsCount
-            delegate: Rectangle {
-                width: 70
-                height: 105
-                color: "#d9d9d9"
-                border.color: "#bdbdbd"
-                border.width: 1
-                radius: 2
-            }
+        Text { id: infoText; anchors.centerIn: parent; font.pixelSize: 18; color: "black"; text: "" }
+
+        function show(msg) {
+            infoText.text = msg
+            infoBanner.opacity = 1
+            hideTimer.restart()
         }
+
+        Timer { id: hideTimer; interval: 1400; repeat: false; onTriggered: infoBanner.opacity = 0 }
     }
 
-    // --- Ablagestapel (mittig) ---
+    // Mitte: Ablage + Ziehstapel
     Item {
         id: centerArea
         anchors.centerIn: parent
-        width: 420
-        height: 240
+        width: 520
+        height: 280
 
-        // Fake-Stack (3 Karten)
-        Repeater {
-            model: 3
-            delegate: Rectangle {
-                width: 95
-                height: 140
-                radius: 6
-                color: "white"
-                border.color: "black"
-                border.width: 1
+        // Ablage (links)
+        Rectangle {
+            width: 120; height: 180; radius: 8
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            color: "white"; border.color: "black"; border.width: 2
 
-                x: 140 + index * 6
-                y: 40 + index * 6
-                rotation: -18 + index * 8
+            Image {
+                anchors.fill: parent
+                anchors.margins: 6
+                source: root.lastDiscard
+                visible: root.lastDiscard !== ""
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+            }
 
-                // "gelbe Karte" innen
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: parent.width * 0.85
-                    height: parent.height * 0.85
-                    radius: 6
-                    color: "#f4c400"
-                    border.color: "white"
-                    border.width: 2
-                }
+            Text {
+                anchors.centerIn: parent
+                text: root.lastDiscard === "" ? "Ablage" : ""
+                color: "black"
             }
         }
 
-        // --- Ziehstapel Button rechts (grau) ---
+        // Ziehstapel Button (rechts)
         Button {
             id: drawBtn
             anchors.right: parent.right
-            anchors.rightMargin: 0
             anchors.verticalCenter: parent.verticalCenter
-            width: 90
-            height: 120
+            width: 120
+            height: 180
             text: "Karte\nziehen"
             font.pixelSize: 16
+            enabled: !mustSayUno
 
-            enabled: !mustSayUno // wenn UNO offen ist, erstmal UNO oder Strafe abwarten
-
-            background: Rectangle {
-                color: "#d9d9d9"
-                border.color: "black"
-                border.width: 1
-                radius: 2
-            }
+            background: Rectangle { color: "#d9d9d9"; border.color: "black"; border.width: 2; radius: 8 }
 
             onClicked: {
-                root.drawRequested()
-                // Prototyp: Karte hinzufügen
-                root.handCount += 1
+                // 1 Karte zufällig ziehen
+                var c = cardService.draw()
+                if (c === "") {
+                    infoBanner.show("Keine Karten gefunden (Resources?)")
+                    return
+                }
+                handModel.append({ src: c })
+
+                // wenn man gezogen hat und vorher UNO offen war, reset (optional)
+                if (mustSayUno) {
+                    mustSayUno = false
+                    unoConfirmed = false
+                    unoTimer.stop()
+                }
             }
         }
     }
 
-    // --- UNO Button (oben rechts) ---
+    // UNO Button
     Button {
         id: unoButton
         text: "UNO!"
@@ -144,62 +163,29 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: 40
 
-        visible: handCount === 2
-        enabled: handCount === 2
+        visible: root.handCount === 1
+        enabled: root.handCount === 1 && !root.unoConfirmed
 
         background: Rectangle {
-            color: unoDeclared ? "#cccccc" : "#ff4444"
+            color: root.unoConfirmed ? "#cccccc" : "#ff4444"
             radius: 10
             border.color: "black"
             border.width: 2
         }
 
+        onVisibleChanged: {
+            if (visible) root.unoConfirmed = false
+        }
+
         onClicked: {
-            unoDeclared = true
-            console.log("UNO gedrückt")
-            // später: Server informieren
+            root.unoConfirmed = true
+            root.mustSayUno = false
+            unoTimer.stop()
+            infoBanner.show("UNO!")
         }
     }
 
-
-    // --- Info Banner (kleines Feedback) ---
-    Rectangle {
-        id: infoBanner
-        width: 360
-        height: 44
-        radius: 8
-        color: "white"
-        border.color: "black"
-        border.width: 2
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: playerHand.top
-        anchors.bottomMargin: 14
-        opacity: 0
-        visible: opacity > 0
-
-        Text {
-            id: infoText
-            anchors.centerIn: parent
-            font.pixelSize: 18
-            color: "black"
-            text: ""
-        }
-
-        function show(msg) {
-            infoText.text = msg
-            infoBanner.opacity = 1
-            hideTimer.restart()
-        }
-
-        Timer {
-            id: hideTimer
-            interval: 1400
-            repeat: false
-            onTriggered: infoBanner.opacity = 0
-        }
-    }
-
-    // --- Spielerhand unten ---
+    // Spielerhand unten
     Row {
         id: playerHand
         spacing: 18
@@ -208,55 +194,47 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
 
         Repeater {
-            model: root.handCount
-            delegate: Item {
-                width: 78
-                height: 118
+            model: handModel
 
-                // Karte
+            delegate: Item {
+                width: 90
+                height: 130
+
+                // Kartenbild
                 Rectangle {
-                    id: cardRect
                     anchors.fill: parent
-                    radius: 6
+                    radius: 8
                     color: "white"
                     border.color: "black"
-                    border.width: 1
+                    border.width: 2
 
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: parent.width * 0.86
-                        height: parent.height * 0.86
-                        radius: 6
-                        color: "#f4c400"
-                        border.color: "white"
-                        border.width: 2
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        source: model.src
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
                     }
 
-                    // Click = "Karte ausspielen" (Prototyp)
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
 
                         onClicked: {
-                            // Wenn UNO offen ist und du spielst weiter: das ist im echten UNO nicht sauber,
-                            // aber wir blocken NICHT hart – nur prototypisch.
-                            if (root.handCount <= 0)
-                                return
+                            // Karte spielen -> Ablage
+                            root.lastDiscard = model.src
+                            handModel.remove(index)
 
-                            // Karte "spielen"
-                            root.handCount -= 1
-                            root.cardPlayed("card_" + index)
-
-                            // Wenn jetzt noch 1 Karte übrig -> UNO muss gedrückt werden
+                            // UNO-Logik nach dem Spielen
                             if (root.handCount === 1) {
                                 root.mustSayUno = true
                                 root.unoConfirmed = false
                                 unoTimer.restart()
                                 infoBanner.show("UNO drücken!")
                             } else {
-                                // wenn vorher UNO offen war, aber jetzt nicht mehr 1 Karte: reset
                                 if (root.mustSayUno && root.handCount !== 1) {
                                     root.mustSayUno = false
+                                    root.unoConfirmed = false
                                     unoTimer.stop()
                                 }
                             }
@@ -267,19 +245,72 @@ Item {
         }
     }
 
-    // --- UNO Timer: wenn nicht gedrückt -> Strafe ziehen ---
+    // ================================
+    // Gegnerkarten (oben)
+    // ================================
+    Row {
+        id: enemyRow
+        spacing: 24
+        anchors.top: parent.top
+        anchors.topMargin: 40
+        anchors.horizontalCenter: parent.horizontalCenter
+
+        Repeater {
+            model: root.opponentsCount
+
+            delegate: Item {
+                width: 90
+                height: 130
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 8
+                    color: "white"
+                    border.color: "black"
+                    border.width: 2
+
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        source: "qrc:/assets/images/cards/Gegnerkarte.png"
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                    }
+                }
+            }
+        }
+    }
+
+
+
+
+
+    // UNO Timer -> Strafe ziehen
     Timer {
         id: unoTimer
         interval: root.unoWindowMs
         repeat: false
         onTriggered: {
             if (root.mustSayUno && !root.unoConfirmed) {
-                // Strafe: ziehen
                 root.mustSayUno = false
-                root.handCount += root.unoPenaltyCards
-                root.penaltyDraw(root.unoPenaltyCards)
+
+                for (var i = 0; i < root.unoPenaltyCards; i++) {
+                    var c = cardService.draw()
+                    if (c !== "") handModel.append({ src: c })
+                }
+
                 infoBanner.show("UNO vergessen! +" + root.unoPenaltyCards + " Karten")
             }
+        }
+    }
+
+    // Start-Hand (zum Test)
+    Component.onCompleted: {
+        cardService.resetDeck()
+        handModel.clear()
+        for (var i = 0; i < 7; i++) {
+            var c = cardService.draw()
+            if (c !== "") handModel.append({ src: c })
         }
     }
 }

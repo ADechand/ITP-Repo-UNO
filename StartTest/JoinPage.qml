@@ -5,20 +5,36 @@ Item {
     id: root
     anchors.fill: parent
 
+    property string serverHost: "127.0.0.1"
+    property int serverPort: 12345
+    property string _pendingJoinCode: ""
+    // Code aus dem TextField (Main.qml greift darauf zu)
+    property string gameCode: ""
+
     signal goBack()
-    //signal joinGame(string playerName, string gameCode)
     signal joinGame()
 
 
-    // Hintergrund
+
+    Connections {
+        target: gameClient
+        function onConnectedChanged() {
+            if (gameClient.connected && root._pendingJoinCode.length > 0) {
+                const c = root._pendingJoinCode
+                root._pendingJoinCode = ""
+                gameClient.joinGame(c)
+            }
+        }
+    }
+
+
     Image {
         anchors.fill: parent
-        source: "qrc:/assets/images/UNOHintergrund.jpg"   // <-- anpassen
+        source: "qrc:/assets/images/UNOHintergrund.jpg"
         fillMode: Image.PreserveAspectCrop
         smooth: true
     }
 
-    // Go Back Button (oben links)
     Button {
         text: "Zurueck"
         anchors.left: parent.left
@@ -28,12 +44,7 @@ Item {
         height: 44
         font.pixelSize: 16
 
-        background: Rectangle {
-            color: "white"
-            border.color: "black"
-            border.width: 2
-        }
-
+        background: Rectangle { color: "white"; border.color: "black"; border.width: 2 }
         onClicked: root.goBack()
     }
 
@@ -59,7 +70,6 @@ Item {
             width: form.width
             height: 60
             x: 0
-
             y: 26
             font.pixelSize: 20
             horizontalAlignment: Text.AlignHCenter
@@ -91,6 +101,7 @@ Item {
             onTextChanged: {
                 const up = text.toUpperCase()
                 if (text !== up) text = up
+                root.gameCode = text.trim()
             }
         }
 
@@ -107,8 +118,21 @@ Item {
 
             enabled: nameField.text.trim().length > 0 && codeField.text.trim().length > 0
             opacity: enabled ? 1.0 : 0.65
-            onClicked: root.joinGame()
-            //onClicked: root.joinGame(nameField.text.trim(), codeField.text.trim())
+
+            onClicked: {
+                const code = root.gameCode.trim()
+                if (code.length === 0) return
+
+                // Wenn nicht verbunden: verbinden und JOIN vormerken
+                if (!gameClient.connected) {
+                    root._pendingJoinCode = code
+                    gameClient.connectToServer(root.serverHost, root.serverPort)
+                    return
+                }
+
+                gameClient.joinGame(code)
+            }
+
         }
     }
 }

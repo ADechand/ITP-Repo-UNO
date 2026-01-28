@@ -8,6 +8,10 @@ Window {
     visible: true
     title: "UNO"
 
+    // Server-Adresse (für Test)
+    property string serverHost: "127.0.0.1"
+    property int serverPort: 12345
+
     StackView {
         id: stack
         anchors.fill: parent
@@ -22,31 +26,71 @@ Window {
     Component {
         id: startPageComponent
         StartPage {
+            id: hostPage
             anchors.fill: parent
+
+            serverHost: Window.serverHost
+            serverPort: Window.serverPort
+
             onGoBack: stack.pop()
 
-            // Link kopieren (dein C++ Service)
-            onCopyLinkRequested: linkService.createCopyAndSendLink()
-
-            onOpenSkins: console.log("Skins (todo)")
-
-            // >>> NEU: Spiel starten -> GamePage <<<
-            onStartGame: stack.push(gamePageComponent)
+            // Dein Button "Spiel starten" löst dieses Signal aus:
+            onStartGame: {
+                if (!gameClient.connected) {
+                    toast.show("Nicht verbunden. Erst mit Server verbinden.")
+                    return
+                }
+                if (hostPage.hostCode.trim().length === 0) {
+                    toast.show("Noch kein Spielcode. Erst 'Link kopieren' / Spiel erstellen.")
+                    return
+                }
+                gameClient.startGame(hostPage.hostCode)
+                toast.show("start_game gesendet: " + hostPage.hostCode)
+            }
         }
     }
 
     Component {
         id: joinPageComponent
         JoinPage {
+            id: joinPage
             anchors.fill: parent
+
+            serverHost: Window.serverHost
+            serverPort: Window.serverPort
+
             onGoBack: stack.pop()
 
-            // >>> NEU: Spiel beitreten -> GamePage <<<
-            onJoinGame: stack.push(gamePageComponent)
+            // Dein Button "Spiel beitreten" löst dieses Signal aus:
+            onJoinGame: {
+                if (!gameClient.connected) {
+                    gameClient.connectToServer(joinPage.serverHost, joinPage.serverPort)
+                }
+                if (joinPage.gameCode.trim().length === 0) {
+                    toast.show("Bitte Spielcode eingeben.")
+                    return
+                }
+                gameClient.joinGame(joinPage.gameCode)
+                toast.show("join_game gesendet: " + joinPage.gameCode)
+            }
         }
     }
 
-    // >>> NEU: GamePage als letzte Seite <<<
+    Connections {
+        target: gameClient
+
+        function onGameCreated(code) { toast.show("Spiel erstellt: " + code) }
+        function onJoinOk(code) { toast.show("Beitritt OK: " + code) }
+        function onError(msg) { toast.show("Server: " + msg) }
+
+        function onGameInit(code, hand, discardTop, drawCount, players, yourIndex) {
+            toast.show("game_init erhalten (" + players + " Spieler)")
+            stack.push(gamePageComponent)
+        }
+    }
+
+
+
     Component {
         id: gamePageComponent
         GamePage {
@@ -55,14 +99,13 @@ Window {
         }
     }
 
-    // --- Toast bleibt gleich ---
     Popup {
         id: toast
         modal: false
         focus: false
         x: (parent.width - width) / 2
         y: 20
-        width: 340
+        width: 520
         height: 60
         closePolicy: Popup.NoAutoClose
 
@@ -73,7 +116,6 @@ Window {
         }
 
         property string msg: ""
-
         contentItem: Text {
             text: toast.msg
             anchors.centerIn: parent
@@ -96,12 +138,23 @@ Window {
         }
     }
 
-    // >>> WICHTIG: target muss zu dem Namen passen, den du aus C++ exposest.
-    // Du nutzt unten "linkService", also nutze auch oben linkService.createCopyAndSendLink()
+    // Deine bisherigen LinkService-Toast-Events
     Connections {
         target: linkService
         function onInfo(message) { toast.show(message) }
         function onError(message) { toast.show(message) }
-        function onCodeCreated(code) { /* optional */ }
+    }
+
+    // NEU: GameClient-Events + Navigation NUR bei game_init
+    Connections {
+        target: gameClient
+
+        function onInfo(msg) { toast.show(msg) }
+        function onError(msg) { toast.show("Server: " + msg) }
+
+        function onGameInit(code, hand, discardTop, drawCount, players, yourIndex) {
+            toast.show("Game init: " + code + " (" + players + " Spieler)")
+            stack.push(gamePageComponent)
+        }
     }
 }
