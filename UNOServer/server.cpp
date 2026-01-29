@@ -12,11 +12,11 @@ Server::Server(QObject* parent) : QObject(parent)
     if (!m_server.listen(QHostAddress::Any, port)) {
         qFatal("Server listen failed");
     }
+    qInfo() << "[NET] Server listening on port" << port;
 }
 
 void Server::onNewConnection()
 {
-
     while (m_server.hasPendingConnections()) {
         QTcpSocket* sock = m_server.nextPendingConnection();
         qInfo() << "[NET] Client connected from"
@@ -43,8 +43,8 @@ void Server::onDisconnected(QTcpSocket* sock)
         if (g.players.isEmpty())
             m_games.remove(code);
     }
-    qInfo() << "[NET] Client disconnected";
 
+    qInfo() << "[NET] Client disconnected";
     sock->deleteLater();
 }
 
@@ -76,7 +76,6 @@ void Server::onReadyRead(QTcpSocket* sock)
 void Server::handleMessage(QTcpSocket* sock, const QJsonObject& msg)
 {
     const QString type = msg.value("type").toString();
-
     qInfo() << "[RX]" << msg;
 
     if (type == "create_game") {
@@ -104,7 +103,58 @@ void Server::handleMessage(QTcpSocket* sock, const QJsonObject& msg)
         return;
     }
 
+    if (type == "draw_cards") {
+        const int count = msg.value("count").toInt(1);
+        drawCards(sock, count);
+        return;
+    }
+
     sendJson(sock, QJsonObject{{"type","error"},{"message","Unknown message type"}});
+}
+
+void Server::drawCards(QTcpSocket* sock, int count)
+{
+    if (count < 1) count = 1;
+    if (count > 10) count = 10;
+
+    const QString code = m_socketToGame.value(sock);
+    if (code.isEmpty()) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Not in a game"}});
+        return;
+    }
+    GameState* g = getGame(code);
+    if (!g || !g->started) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Game not started"}});
+        return;
+    }
+    if (!g->players.contains(sock)) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Not a player"}});
+        return;
+    }
+
+    QStringList& hand = g->hands[sock];
+    QJsonArray cardsArr;
+
+    for (int i = 0; i < count; ++i) {
+        if (g->deck.isEmpty()) break;
+        const QString card = g->deck.takeLast();
+        hand.append(card);
+        cardsArr.append(card);
+    }
+
+    if (cardsArr.isEmpty()) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Deck is empty"}});
+        return;
+    }
+
+    sendJson(sock, QJsonObject{
+                       {"type","cards_drawn"},
+                       {"cards",cardsArr},
+                       {"drawCount",g->deck.size()}
+                   });
+
+    qInfo() << "[GAME]" << code << "draw_cards count=" << cardsArr.size()
+            << "remaining=" << g->deck.size();
 }
 
 void Server::sendJson(QTcpSocket* sock, const QJsonObject& obj)
@@ -134,7 +184,6 @@ GameState* Server::getGame(const QString& code)
 
 void Server::createGame(QTcpSocket* hostSock)
 {
-
     if (m_socketToGame.contains(hostSock)) {
         sendJson(hostSock, QJsonObject{{"type","error"},{"message","Already in a game"}});
         return;
@@ -149,6 +198,7 @@ void Server::createGame(QTcpSocket* hostSock)
         sendJson(hostSock, QJsonObject{{"type","error"},{"message","Could not create code"}});
         return;
     }
+
     qInfo() << "[GAME] created code" << code << "host=" << hostSock;
 
     GameState g;
@@ -185,7 +235,6 @@ void Server::joinGame(QTcpSocket* sock, const QString& code)
     m_socketToGame.insert(sock, code);
 
     sendJson(sock, QJsonObject{{"type","join_ok"},{"code",code}});
-
     qInfo() << "[GAME]" << code << "player joined, total=" << g->players.size();
 }
 
@@ -199,18 +248,36 @@ void Server::shuffle(QStringList& list) const
 
 QStringList Server::buildDeckFromStaticList() const
 {
-    // Für den Start: Liste muss zu deinen Dateinamen passen.
-    // Besser: später in cards.json auslagern oder echte UNO-IDs verwenden.
+    // Einheitliches Naming:
+    // - Unterstriche statt Leerzeichen
+    // - Dateiendungen exakt wie im assets/images/cards Ordner
+
     return QStringList{
-        "Rot 1.png","Rot 2.png","Rot 3.png","Rot 4.png","Rot 5.png","Rot 6.png","Rot 7.png","Rot 8.png","Rot 9.png",
-        "Gruen 1.png","Gruen 2.png","Gruen 3.png","Gruen 4.png","Gruen 5.png","Gruen 6.png","Gruen 7.png","Gruen 8.png","Gruen 9.png",
-        "Blau 1.png","Blau 2.png","Blau 3.png","Blau 4.png","Blau 5.png","Blau 6.png","Blau 7.png","Blau 8.png","Blau 9.png",
-        "Gelb 1.png","Gelb 2.png","Gelb 3.png","Gelb 4.png","Gelb 5.png","Gelb 6.png","Gelb 7.png","Gelb 8.png","Gelb 9.png",
-        "Rot Sperre.png","Gruen Sperre.png","Blau Sperre.png","Gelb Sperre.png",
-        "Rot Richtungswechsel.png","Gruen Richtungswechsel.png","Blau Richtungswechsel.png","Gelb Richtungswechsel.png",
-        "Extra Farbwechsel.png","Extra +4.png"
+        // Rot
+        "Rot_1.jpg","Rot_2.jpg","Rot_3.jpg","Rot_4.jpg","Rot_5.jpg","Rot_6.jpg","Rot_7.jpg","Rot_8.jpg","Rot_9.jpg",
+
+        // Gruen
+        "Gruen_1.jpg","Gruen_2.jpg","Gruen_3.jpg","Gruen_4.jpg","Gruen_5.jpg","Gruen_6.jpg","Gruen_7.jpg","Gruen_8.jpg","Gruen_9.jpg",
+
+        // Blau
+        "Blau_1.jpg","Blau_2.jpg","Blau_3.jpg","Blau_4.jpg","Blau_5.jpg","Blau_6.jpg","Blau_7.jpg","Blau_8.jpg","Blau_9.jpg",
+
+        // Gelb
+        "Gelb_1.jpg","Gelb_2.jpg","Gelb_3.jpg","Gelb_4.jpg","Gelb_5.jpg","Gelb_6.jpg","Gelb_7.jpg","Gelb_8.jpg","Gelb_9.jpg",
+
+        // Sperre
+        "Rot_Sperre.jpg","Gruen_Sperre.jpg","Blau_Sperre.jpg","Gelb_Sperre.jpg",
+
+        // Richtungswechsel
+        "Rot_Richtungswechsel.jpg","Gruen_Richtungswechsel.jpg",
+        "Blau_Richtungswechsel.jpg","Gelb_Richtungswechsel.jpg",
+
+        // Spezialkarten
+        "Extra_Farbwechsel.jpg",
+        "Extra_4plus.jpg"
     };
 }
+
 
 void Server::startGame(QTcpSocket* sock, const QString& code)
 {
@@ -238,23 +305,23 @@ void Server::startGame(QTcpSocket* sock, const QString& code)
     g->hands.clear();
     g->discard.clear();
 
-    // 6 Karten pro Spieler
     for (QTcpSocket* p : g->players) {
         QStringList hand;
-        for (int i = 0; i < 6; ++i) {
+        for (int i = 0; i < 6; ++i)
             hand.append(g->deck.takeLast());
-        }
         g->hands.insert(p, hand);
     }
 
-    // erste Ablagekarte
     g->discard.append(g->deck.takeLast());
     g->started = true;
 
-    // an alle senden
     const int players = g->players.size();
     const QString discardTop = g->discard.last();
     const int drawCount = g->deck.size();
+
+    qInfo() << "[GAME]" << code << "STARTED players=" << players
+            << "discardTop=" << discardTop
+            << "drawCount=" << drawCount;
 
     for (int i = 0; i < g->players.size(); ++i) {
         QTcpSocket* p = g->players[i];

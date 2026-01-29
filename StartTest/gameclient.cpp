@@ -2,18 +2,17 @@
 
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QDebug>
 
 GameClient::GameClient(QObject* parent) : QObject(parent)
 {
     connect(&m_sock, &QTcpSocket::connected, this, [this]() {
-        qInfo() << "[CLIENT] connected state=" << m_sock.state();
         m_connected = true;
         emit connectedChanged();
         emit info("Verbunden.");
     });
 
     connect(&m_sock, &QTcpSocket::disconnected, this, [this]() {
-        qInfo() << "[CLIENT] disconnected state=" << m_sock.state();
         m_connected = false;
         emit connectedChanged();
         emit info("Getrennt.");
@@ -60,17 +59,29 @@ GameClient::GameClient(QObject* parent) : QObject(parent)
             }
 
             if (type == "game_init") {
-                const QString code = o.value("code").toString();
-                const QString discardTop = o.value("discardTop").toString();
-                const int drawCount = o.value("drawCount").toInt();
-                const int players = o.value("players").toInt();
-                const int yourIndex = o.value("yourIndex").toInt();
+                m_hasGameInit = true;
+                m_gameCode = o.value("code").toString();
+                m_discardTop = o.value("discardTop").toString();
+                m_drawCount = o.value("drawCount").toInt();
+                m_players = o.value("players").toInt();
+                m_yourIndex = o.value("yourIndex").toInt();
 
-                QStringList hand;
+                m_hand.clear();
                 const QJsonArray arr = o.value("hand").toArray();
-                for (const QJsonValue& v : arr) hand << v.toString();
+                for (const QJsonValue& v : arr) m_hand << v.toString();
 
-                emit gameInit(code, hand, discardTop, drawCount, players, yourIndex);
+                emit gameStateChanged();
+                emit info(QString("game_init: hand=%1 discard=%2").arg(m_hand.size()).arg(m_discardTop));
+                continue;
+            }
+
+            if (type == "cards_drawn") {
+                const QJsonArray arr = o.value("cards").toArray();
+                for (const QJsonValue& v : arr) m_hand << v.toString();
+                m_drawCount = o.value("drawCount").toInt();
+
+                emit gameStateChanged();
+                emit info(QString("cards_drawn: +%1").arg(arr.size()));
                 continue;
             }
 
@@ -90,8 +101,6 @@ void GameClient::connectToServer(const QString& host, int port)
 
 void GameClient::disconnectFromServer()
 {
-    qInfo() << "[CLIENT] disconnectFromServer() called";
-
     m_sock.disconnectFromHost();
 }
 
@@ -115,4 +124,11 @@ void GameClient::joinGame(const QString& code)
 void GameClient::startGame(const QString& code)
 {
     sendJson(QJsonObject{{"type","start_game"},{"code",code.trimmed().toUpper()}});
+}
+
+void GameClient::drawCards(int count)
+{
+    if (count < 1) count = 1;
+    if (count > 10) count = 10;
+    sendJson(QJsonObject{{"type","draw_cards"},{"count",count}});
 }

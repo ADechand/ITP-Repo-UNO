@@ -37,6 +37,7 @@ private:
     void createGame(QTcpSocket* hostSock);
     void joinGame(QTcpSocket* sock, const QString& code);
     void startGame(QTcpSocket* sock, const QString& code);
+    void drawCards(QTcpSocket* sock, int count);
 
     QStringList buildDeckFromStaticList() const;
     void shuffle(QStringList& list) const;
