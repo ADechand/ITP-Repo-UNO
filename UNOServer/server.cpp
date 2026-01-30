@@ -37,6 +37,38 @@ CardInfo parseCardInfo(const QString& cardName)
 }
 } // namespace
 
+namespace {
+struct CardInfo {
+    QString color;
+    QString value;
+    bool isWild = false;
+};
+
+CardInfo parseCardInfo(const QString& cardName)
+{
+    QString base = cardName;
+    const int dot = base.lastIndexOf('.');
+    if (dot >= 0)
+        base = base.left(dot);
+
+    const QStringList parts = base.split('_');
+    CardInfo info;
+    if (parts.isEmpty())
+        return info;
+
+    if (parts.first() == "Extra") {
+        info.isWild = true;
+        info.color = "Extra";
+        info.value = parts.mid(1).join("_");
+        return info;
+    }
+
+    info.color = parts.value(0);
+    info.value = parts.mid(1).join("_");
+    return info;
+}
+} // namespace
+
 Server::Server(QObject* parent) : QObject(parent)
 {
     connect(&m_server, &QTcpServer::newConnection, this, &Server::onNewConnection);
