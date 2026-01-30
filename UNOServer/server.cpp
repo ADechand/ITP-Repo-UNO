@@ -37,38 +37,6 @@ CardInfo parseCardInfo(const QString& cardName)
 }
 } // namespace
 
-namespace {
-struct CardInfo {
-    QString color;
-    QString value;
-    bool isWild = false;
-};
-
-CardInfo parseCardInfo(const QString& cardName)
-{
-    QString base = cardName;
-    const int dot = base.lastIndexOf('.');
-    if (dot >= 0)
-        base = base.left(dot);
-
-    const QStringList parts = base.split('_');
-    CardInfo info;
-    if (parts.isEmpty())
-        return info;
-
-    if (parts.first() == "Extra") {
-        info.isWild = true;
-        info.color = "Extra";
-        info.value = parts.mid(1).join("_");
-        return info;
-    }
-
-    info.color = parts.value(0);
-    info.value = parts.mid(1).join("_");
-    return info;
-}
-} // namespace
-
 Server::Server(QObject* parent) : QObject(parent)
 {
     connect(&m_server, &QTcpServer::newConnection, this, &Server::onNewConnection);
@@ -244,6 +212,7 @@ void Server::drawCards(QTcpSocket* sock, int count)
         return;
     }
 
+    const int drawingPlayerIndex = g->currentPlayerIndex;
     g->currentPlayerIndex = advanceIndex(g->currentPlayerIndex, 1, g->direction, g->players.size());
 
     sendJson(sock, QJsonObject{
@@ -254,7 +223,7 @@ void Server::drawCards(QTcpSocket* sock, int count)
                    });
 
     sendStateUpdate(g);
-    appendLog(g, "draw", g->currentPlayerIndex, QString::number(cardsArr.size()));
+    appendLog(g, "draw", drawingPlayerIndex, QString::number(cardsArr.size()));
 
     qInfo() << "[GAME]" << code << "draw_cards count=" << cardsArr.size()
             << "remaining=" << g->deck.size();
@@ -730,6 +699,7 @@ void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chos
 
     if (hand.isEmpty()) {
         g->finished = true;
+        appendLog(g, "win", playerIndex, "hand_empty");
         QJsonObject finished{
             {"type","game_finished"},
             {"winnerIndex", playerIndex},
@@ -737,7 +707,6 @@ void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chos
         };
         for (QTcpSocket* p : g->players)
             sendJson(p, finished);
-        appendLog(g, "win", playerIndex, "hand_empty");
     }
 
     sendStateUpdate(g, card, playerIndex);
