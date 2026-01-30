@@ -63,12 +63,49 @@ GameClient::GameClient(QObject* parent) : QObject(parent)
                 const int drawCount = o.value("drawCount").toInt();
                 const int players = o.value("players").toInt();
                 const int yourIndex = o.value("yourIndex").toInt();
+                const int currentPlayerIndex = o.value("currentPlayerIndex").toInt();
 
                 QStringList hand;
                 const QJsonArray arr = o.value("hand").toArray();
                 for (const QJsonValue& v : arr) hand << v.toString();
 
-                emit gameInit(code, hand, discardTop, drawCount, players, yourIndex);
+                QVariantList handCounts;
+                const QJsonArray countsArr = o.value("handCounts").toArray();
+                for (const QJsonValue& v : countsArr) handCounts << v.toInt();
+
+                emit gameInit(code, hand, discardTop, drawCount, players, yourIndex, currentPlayerIndex, handCounts);
+                continue;
+            }
+
+            if (type == "cards_drawn") {
+                const int drawCount = o.value("drawCount").toInt();
+                const int currentPlayerIndex = o.value("currentPlayerIndex").toInt();
+
+                QStringList cards;
+                const QJsonArray arr = o.value("cards").toArray();
+                for (const QJsonValue& v : arr) cards << v.toString();
+
+                emit cardsDrawn(cards, drawCount, currentPlayerIndex);
+                continue;
+            }
+
+            if (type == "state_update") {
+                const QString discardTop = o.value("discardTop").toString();
+                const int drawCount = o.value("drawCount").toInt();
+                const int currentPlayerIndex = o.value("currentPlayerIndex").toInt();
+
+                QVariantList handCounts;
+                const QJsonArray countsArr = o.value("handCounts").toArray();
+                for (const QJsonValue& v : countsArr) handCounts << v.toInt();
+
+                emit stateUpdate(discardTop, drawCount, currentPlayerIndex, handCounts);
+                continue;
+            }
+
+            if (type == "card_played") {
+                const int playerIndex = o.value("playerIndex").toInt();
+                const QString card = o.value("card").toString();
+                emit cardPlayed(playerIndex, card);
                 continue;
             }
 
@@ -111,4 +148,14 @@ void GameClient::joinGame(const QString& code)
 void GameClient::startGame(const QString& code)
 {
     sendJson(QJsonObject{{"type","start_game"},{"code",code.trimmed().toUpper()}});
+}
+
+void GameClient::drawCards(int count)
+{
+    sendJson(QJsonObject{{"type","draw_cards"},{"count",count}});
+}
+
+void GameClient::playCard(const QString& card)
+{
+    sendJson(QJsonObject{{"type","play_card"},{"card",card}});
 }

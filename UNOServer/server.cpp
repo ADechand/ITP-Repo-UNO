@@ -4,6 +4,38 @@
 #include <QJsonArray>
 #include <QRandomGenerator>
 
+namespace {
+struct CardInfo {
+    QString color;
+    QString value;
+    bool isWild = false;
+};
+
+CardInfo parseCardInfo(const QString& cardName)
+{
+    QString base = cardName;
+    const int dot = base.lastIndexOf('.');
+    if (dot >= 0)
+        base = base.left(dot);
+
+    const QStringList parts = base.split('_');
+    CardInfo info;
+    if (parts.isEmpty())
+        return info;
+
+    if (parts.first() == "Extra") {
+        info.isWild = true;
+        info.color = "Extra";
+        info.value = parts.mid(1).join("_");
+        return info;
+    }
+
+    info.color = parts.value(0);
+    info.value = parts.mid(1).join("_");
+    return info;
+}
+} // namespace
+
 Server::Server(QObject* parent) : QObject(parent)
 {
     connect(&m_server, &QTcpServer::newConnection, this, &Server::onNewConnection);
@@ -109,6 +141,16 @@ void Server::handleMessage(QTcpSocket* sock, const QJsonObject& msg)
         return;
     }
 
+    if (type == "play_card") {
+        const QString card = msg.value("card").toString();
+        if (card.isEmpty()) {
+            sendJson(sock, QJsonObject{{"type","error"},{"message","Missing card"}});
+            return;
+        }
+        playCard(sock, card);
+        return;
+    }
+
     sendJson(sock, QJsonObject{{"type","error"},{"message","Unknown message type"}});
 }
 
@@ -131,6 +173,10 @@ void Server::drawCards(QTcpSocket* sock, int count)
         sendJson(sock, QJsonObject{{"type","error"},{"message","Not a player"}});
         return;
     }
+    if (g->currentPlayerIndex != g->players.indexOf(sock)) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Not your turn"}});
+        return;
+    }
 
     QStringList& hand = g->hands[sock];
     QJsonArray cardsArr;
@@ -147,11 +193,16 @@ void Server::drawCards(QTcpSocket* sock, int count)
         return;
     }
 
+    g->currentPlayerIndex = (g->currentPlayerIndex + 1) % g->players.size();
+
     sendJson(sock, QJsonObject{
                        {"type","cards_drawn"},
                        {"cards",cardsArr},
-                       {"drawCount",g->deck.size()}
+                       {"drawCount",g->deck.size()},
+                       {"currentPlayerIndex",g->currentPlayerIndex}
                    });
+
+    sendStateUpdate(g);
 
     qInfo() << "[GAME]" << code << "draw_cards count=" << cardsArr.size()
             << "remaining=" << g->deck.size();
@@ -162,6 +213,52 @@ void Server::sendJson(QTcpSocket* sock, const QJsonObject& obj)
     const QByteArray payload = QJsonDocument(obj).toJson(QJsonDocument::Compact) + "\n";
     sock->write(payload);
     sock->flush();
+}
+
+int Server::indexOfPlayer(GameState* g, QTcpSocket* sock) const
+{
+    return g ? g->players.indexOf(sock) : -1;
+}
+
+bool Server::isCardLegal(const QString& card, const QString& topDiscard) const
+{
+    if (topDiscard.isEmpty())
+        return true;
+
+    const CardInfo playInfo = parseCardInfo(card);
+    if (playInfo.isWild)
+        return true;
+
+    const CardInfo topInfo = parseCardInfo(topDiscard);
+    if (topInfo.isWild)
+        return true;
+
+    return playInfo.color == topInfo.color || playInfo.value == topInfo.value;
+}
+
+void Server::sendStateUpdate(GameState* g, const QString& lastPlayedCard, int playedBy)
+{
+    if (!g) return;
+
+    QJsonArray counts;
+    for (QTcpSocket* p : g->players)
+        counts.append(g->hands.value(p).size());
+
+    QJsonObject state{
+        {"type","state_update"},
+        {"discardTop", g->discard.isEmpty() ? QString() : g->discard.last()},
+        {"drawCount", g->deck.size()},
+        {"currentPlayerIndex", g->currentPlayerIndex},
+        {"handCounts", counts}
+    };
+
+    if (!lastPlayedCard.isEmpty())
+        state.insert("lastPlayedCard", lastPlayedCard);
+    if (playedBy >= 0)
+        state.insert("playedBy", playedBy);
+
+    for (QTcpSocket* p : g->players)
+        sendJson(p, state);
 }
 
 QString Server::createCode() const
@@ -314,10 +411,14 @@ void Server::startGame(QTcpSocket* sock, const QString& code)
 
     g->discard.append(g->deck.takeLast());
     g->started = true;
+    g->currentPlayerIndex = 0;
 
     const int players = g->players.size();
     const QString discardTop = g->discard.last();
     const int drawCount = g->deck.size();
+    QJsonArray handCounts;
+    for (QTcpSocket* p : g->players)
+        handCounts.append(g->hands.value(p).size());
 
     qInfo() << "[GAME]" << code << "STARTED players=" << players
             << "discardTop=" << discardTop
@@ -337,9 +438,64 @@ void Server::startGame(QTcpSocket* sock, const QString& code)
             {"yourIndex",i},
             {"discardTop",discardTop},
             {"drawCount",drawCount},
-            {"hand",handArr}
+            {"hand",handArr},
+            {"currentPlayerIndex",g->currentPlayerIndex},
+            {"handCounts",handCounts}
         };
 
         sendJson(p, init);
     }
+}
+
+void Server::playCard(QTcpSocket* sock, const QString& card)
+{
+    const QString code = m_socketToGame.value(sock);
+    if (code.isEmpty()) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Not in a game"}});
+        return;
+    }
+
+    GameState* g = getGame(code);
+    if (!g || !g->started) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Game not started"}});
+        return;
+    }
+
+    const int playerIndex = indexOfPlayer(g, sock);
+    if (playerIndex < 0) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Not a player"}});
+        return;
+    }
+
+    if (playerIndex != g->currentPlayerIndex) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Not your turn"}});
+        return;
+    }
+
+    if (!isCardLegal(card, g->discard.isEmpty() ? QString() : g->discard.last())) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Illegal card"}});
+        return;
+    }
+
+    QStringList& hand = g->hands[sock];
+    if (!hand.removeOne(card)) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Card not in hand"}});
+        return;
+    }
+
+    g->discard.append(card);
+    g->currentPlayerIndex = (g->currentPlayerIndex + 1) % g->players.size();
+
+    QJsonObject played{
+        {"type","card_played"},
+        {"playerIndex", playerIndex},
+        {"card", card}
+    };
+
+    for (QTcpSocket* p : g->players)
+        sendJson(p, played);
+
+    sendStateUpdate(g, card, playerIndex);
+
+    qInfo() << "[GAME]" << code << "play_card player=" << playerIndex << "card=" << card;
 }

@@ -12,6 +12,7 @@ struct GameState {
     QTcpSocket* host = nullptr;
     QList<QTcpSocket*> players;                 // Reihenfolge = yourIndex
     bool started = false;
+    int currentPlayerIndex = 0;
 
     QStringList deck;                           // draw pile (oben = last)
     QStringList discard;                        // discard pile (oben = last)
@@ -38,9 +39,13 @@ private:
     void joinGame(QTcpSocket* sock, const QString& code);
     void startGame(QTcpSocket* sock, const QString& code);
     void drawCards(QTcpSocket* sock, int count);
+    void playCard(QTcpSocket* sock, const QString& card);
 
     QStringList buildDeckFromStaticList() const;
     void shuffle(QStringList& list) const;
+    void sendStateUpdate(GameState* g, const QString& lastPlayedCard = QString(), int playedBy = -1);
+    int indexOfPlayer(GameState* g, QTcpSocket* sock) const;
+    bool isCardLegal(const QString& card, const QString& topDiscard) const;
 
 private:
     QTcpServer m_server;
