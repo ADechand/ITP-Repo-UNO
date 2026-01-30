@@ -15,6 +15,7 @@ struct GameState {
     int currentPlayerIndex = 0;
     int direction = 1;
     QString currentColor;
+    bool finished = false;
 
     QStringList deck;                           // draw pile (oben = last)
     QStringList discard;                        // discard pile (oben = last)
@@ -49,7 +50,7 @@ private:
     int indexOfPlayer(GameState* g, QTcpSocket* sock) const;
     bool isCardLegal(const QString& card, const QString& topDiscard, const QString& currentColor) const;
     int advanceIndex(int startIndex, int steps, int direction, int playerCount) const;
-    void drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count) const;
+    QStringList drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count) const;
 
 private:
     QTcpServer m_server;

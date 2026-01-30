@@ -15,6 +15,7 @@ Item {
     property int lastDrawCount: 0
     property string cardBase: "qrc:/assets/images/cards/"
     property string pendingWildCard: ""
+    property bool unoDeclared: false
 
     // Normalisiert alte Namen: "Blau 2" -> "Blau_2.jpg"
     // lässt neue Namen wie "Blau_2.jpg" unverändert
@@ -51,8 +52,21 @@ Item {
         // Debug/Status
         lastHandCount = gameClient.hand ? gameClient.hand.length : 0
         lastDrawCount = gameClient.drawCount
+        if (lastHandCount !== 1) {
+            unoDeclared = false
+        }
 
         infoBanner.show("Hand: " + lastHandCount + " | Ablage: " + gameClient.discardTop + " | Deck: " + lastDrawCount)
+
+        if (gameClient.finished) {
+            if (gameClient.winnerIndex === gameClient.yourIndex) {
+                infoBanner.show("Spiel beendet! Du hast gewonnen.")
+            } else if (gameClient.winnerIndex >= 0) {
+                infoBanner.show("Spiel beendet! Gewinner: Spieler " + (gameClient.winnerIndex + 1))
+            } else {
+                infoBanner.show("Spiel beendet!")
+            }
+        }
     }
 
     Component.onCompleted: applyStateFromClient()
@@ -304,8 +318,35 @@ Item {
         }
     }
 
+    Button {
+        id: unoButton
+        text: "UNO!"
+        width: 120
+        height: 50
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 30
+        anchors.bottomMargin: 120
+        visible: gameClient.hasGameInit && !gameClient.finished && gameClient.hand.length === 1
+        enabled: !unoDeclared
+
+        background: Rectangle {
+            color: unoDeclared ? "#cccccc" : "#ff4444"
+            radius: 10
+            border.color: "black"
+            border.width: 2
+        }
+
+        onClicked: {
+            unoDeclared = true
+            infoBanner.show("UNO!")
+        }
+    }
+
     function isYourTurn() {
-        return gameClient.hasGameInit && gameClient.currentPlayerIndex === gameClient.yourIndex
+        return gameClient.hasGameInit &&
+               !gameClient.finished &&
+               gameClient.currentPlayerIndex === gameClient.yourIndex
     }
 
     function activeOpponentIndex() {

@@ -170,6 +170,10 @@ void Server::drawCards(QTcpSocket* sock, int count)
         sendJson(sock, QJsonObject{{"type","error"},{"message","Game not started"}});
         return;
     }
+    if (g->finished) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Game finished"}});
+        return;
+    }
     if (!g->players.contains(sock)) {
         sendJson(sock, QJsonObject{{"type","error"},{"message","Not a player"}});
         return;
@@ -249,17 +253,21 @@ int Server::advanceIndex(int startIndex, int steps, int direction, int playerCou
     return idx;
 }
 
-void Server::drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count) const
+QStringList Server::drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count) const
 {
+    QStringList drawn;
     if (!g || !sock || count <= 0)
-        return;
+        return drawn;
 
     QStringList& hand = g->hands[sock];
     for (int i = 0; i < count; ++i) {
         if (g->deck.isEmpty())
             break;
-        hand.append(g->deck.takeLast());
+        const QString card = g->deck.takeLast();
+        hand.append(card);
+        drawn.append(card);
     }
+    return drawn;
 }
 
 void Server::sendStateUpdate(GameState* g, const QString& lastPlayedCard, int playedBy)
@@ -276,7 +284,8 @@ void Server::sendStateUpdate(GameState* g, const QString& lastPlayedCard, int pl
         {"drawCount", g->deck.size()},
         {"currentPlayerIndex", g->currentPlayerIndex},
         {"handCounts", counts},
-        {"currentColor", g->currentColor}
+        {"currentColor", g->currentColor},
+        {"finished", g->finished}
     };
 
     if (!lastPlayedCard.isEmpty())
@@ -440,6 +449,7 @@ void Server::startGame(QTcpSocket* sock, const QString& code)
     g->started = true;
     g->currentPlayerIndex = 0;
     g->direction = 1;
+    g->finished = false;
 
     const CardInfo topInfo = parseCardInfo(g->discard.last());
     if (topInfo.isWild) {
@@ -476,7 +486,8 @@ void Server::startGame(QTcpSocket* sock, const QString& code)
             {"hand",handArr},
             {"currentPlayerIndex",g->currentPlayerIndex},
             {"handCounts",handCounts},
-            {"currentColor", g->currentColor}
+            {"currentColor", g->currentColor},
+            {"finished", g->finished}
         };
 
         sendJson(p, init);
@@ -494,6 +505,10 @@ void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chos
     GameState* g = getGame(code);
     if (!g || !g->started) {
         sendJson(sock, QJsonObject{{"type","error"},{"message","Game not started"}});
+        return;
+    }
+    if (g->finished) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Game finished"}});
         return;
     }
 
@@ -542,10 +557,13 @@ void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chos
     }
 
     const int playerCount = g->players.size();
+    QStringList drawnCards;
+    int drawnByIndex = -1;
     if (playInfo.isWild && playInfo.value == "4plus") {
         const int targetIndex = advanceIndex(g->currentPlayerIndex, 1, g->direction, playerCount);
         QTcpSocket* targetSock = g->players[targetIndex];
-        drawCardsToPlayer(g, targetSock, 4);
+        drawnCards = drawCardsToPlayer(g, targetSock, 4);
+        drawnByIndex = targetIndex;
         g->currentPlayerIndex = advanceIndex(g->currentPlayerIndex, 2, g->direction, playerCount);
     } else if (playInfo.value == "Sperre") {
         g->currentPlayerIndex = advanceIndex(g->currentPlayerIndex, 2, g->direction, playerCount);
@@ -568,6 +586,29 @@ void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chos
 
     for (QTcpSocket* p : g->players)
         sendJson(p, played);
+
+    if (!drawnCards.isEmpty() && drawnByIndex >= 0) {
+        QTcpSocket* targetSock = g->players[drawnByIndex];
+        QJsonArray cardsArr;
+        for (const QString& c : drawnCards)
+            cardsArr.append(c);
+        sendJson(targetSock, QJsonObject{
+                               {"type","cards_drawn"},
+                               {"cards", cardsArr},
+                               {"drawCount", g->deck.size()},
+                               {"currentPlayerIndex", g->currentPlayerIndex}
+                           });
+    }
+
+    if (hand.isEmpty()) {
+        g->finished = true;
+        QJsonObject finished{
+            {"type","game_finished"},
+            {"winnerIndex", playerIndex}
+        };
+        for (QTcpSocket* p : g->players)
+            sendJson(p, finished);
+    }
 
     sendStateUpdate(g, card, playerIndex);
 

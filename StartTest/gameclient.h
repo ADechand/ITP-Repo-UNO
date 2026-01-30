@@ -22,6 +22,8 @@ class GameClient : public QObject
     Q_PROPERTY(int currentPlayerIndex READ currentPlayerIndex NOTIFY gameStateChanged)
     Q_PROPERTY(QVariantList handCounts READ handCounts NOTIFY gameStateChanged)
     Q_PROPERTY(QString currentColor READ currentColor NOTIFY gameStateChanged)
+    Q_PROPERTY(bool finished READ finished NOTIFY gameStateChanged)
+    Q_PROPERTY(int winnerIndex READ winnerIndex NOTIFY gameStateChanged)
 
 public:
     explicit GameClient(QObject* parent = nullptr);
@@ -38,6 +40,8 @@ public:
     int currentPlayerIndex() const { return m_currentPlayerIndex; }
     QVariantList handCounts() const { return m_handCounts; }
     QString currentColor() const { return m_currentColor; }
+    bool finished() const { return m_finished; }
+    int winnerIndex() const { return m_winnerIndex; }
 
     Q_INVOKABLE void connectToServer(const QString& host, int port);
     Q_INVOKABLE void disconnectFromServer();
@@ -80,4 +84,6 @@ private:
     int m_currentPlayerIndex = 0;
     QVariantList m_handCounts;
     QString m_currentColor;
+    bool m_finished = false;
+    int m_winnerIndex = -1;
 };

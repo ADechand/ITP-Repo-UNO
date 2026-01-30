@@ -67,6 +67,8 @@ GameClient::GameClient(QObject* parent) : QObject(parent)
                 m_yourIndex = o.value("yourIndex").toInt();
                 m_currentPlayerIndex = o.value("currentPlayerIndex").toInt();
                 m_currentColor = o.value("currentColor").toString();
+                m_finished = o.value("finished").toBool(false);
+                m_winnerIndex = -1;
 
                 m_hand.clear();
                 const QJsonArray arr = o.value("hand").toArray();
@@ -97,6 +99,7 @@ GameClient::GameClient(QObject* parent) : QObject(parent)
                 m_drawCount = o.value("drawCount").toInt();
                 m_currentPlayerIndex = o.value("currentPlayerIndex").toInt();
                 m_currentColor = o.value("currentColor").toString();
+                m_finished = o.value("finished").toBool(false);
 
                 m_handCounts.clear();
                 const QJsonArray countsArr = o.value("handCounts").toArray();
@@ -113,6 +116,13 @@ GameClient::GameClient(QObject* parent) : QObject(parent)
                     m_hand.removeOne(card);
                     emit gameStateChanged();
                 }
+                continue;
+            }
+
+            if (type == "game_finished") {
+                m_finished = true;
+                m_winnerIndex = o.value("winnerIndex").toInt(-1);
+                emit gameStateChanged();
                 continue;
             }
 
