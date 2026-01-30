@@ -4,6 +4,7 @@
 #include <QTcpSocket>
 #include <QStringList>
 #include <QJsonObject>
+#include <QVariantList>
 
 class GameClient : public QObject
 {
@@ -18,6 +19,11 @@ class GameClient : public QObject
     Q_PROPERTY(int drawCount READ drawCount NOTIFY gameStateChanged)
     Q_PROPERTY(int players READ players NOTIFY gameStateChanged)
     Q_PROPERTY(int yourIndex READ yourIndex NOTIFY gameStateChanged)
+    Q_PROPERTY(int currentPlayerIndex READ currentPlayerIndex NOTIFY gameStateChanged)
+    Q_PROPERTY(QVariantList handCounts READ handCounts NOTIFY gameStateChanged)
+    Q_PROPERTY(QString currentColor READ currentColor NOTIFY gameStateChanged)
+    Q_PROPERTY(bool finished READ finished NOTIFY gameStateChanged)
+    Q_PROPERTY(int winnerIndex READ winnerIndex NOTIFY gameStateChanged)
 
 public:
     explicit GameClient(QObject* parent = nullptr);
@@ -31,6 +37,11 @@ public:
     int drawCount() const { return m_drawCount; }
     int players() const { return m_players; }
     int yourIndex() const { return m_yourIndex; }
+    int currentPlayerIndex() const { return m_currentPlayerIndex; }
+    QVariantList handCounts() const { return m_handCounts; }
+    QString currentColor() const { return m_currentColor; }
+    bool finished() const { return m_finished; }
+    int winnerIndex() const { return m_winnerIndex; }
 
     Q_INVOKABLE void connectToServer(const QString& host, int port);
     Q_INVOKABLE void disconnectFromServer();
@@ -40,6 +51,7 @@ public:
     Q_INVOKABLE void startGame(const QString& code);
 
     Q_INVOKABLE void drawCards(int count = 1);
+    Q_INVOKABLE void playCard(const QString& card, const QString& chosenColor = QString());
 
 signals:
     void info(QString msg);
@@ -69,4 +81,9 @@ private:
     int m_drawCount = 0;
     int m_players = 0;
     int m_yourIndex = -1;
+    int m_currentPlayerIndex = 0;
+    QVariantList m_handCounts;
+    QString m_currentColor;
+    bool m_finished = false;
+    int m_winnerIndex = -1;
 };
