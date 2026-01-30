@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import Qt.labs.platform 1.1
 
 Item {
     id: root
@@ -10,9 +11,12 @@ Item {
 
     property int opponentsCount: 0
     property string lastDiscard: ""
+    property string lastDiscardId: ""
     property int lastHandCount: 0
     property int lastDrawCount: 0
     property string cardBase: "qrc:/assets/images/cards/"
+    property string pendingWildCard: ""
+    property bool unoDeclared: false
 
     // Normalisiert alte Namen: "Blau 2" -> "Blau_2.jpg"
     // lässt neue Namen wie "Blau_2.jpg" unverändert
@@ -43,13 +47,27 @@ Item {
         if (!gameClient.hasGameInit) return
 
         lastDiscard = fileToQrc(gameClient.discardTop)
+        lastDiscardId = normalizeCardName(gameClient.discardTop)
         opponentsCount = Math.max(0, gameClient.players - 1)
 
         // Debug/Status
         lastHandCount = gameClient.hand ? gameClient.hand.length : 0
         lastDrawCount = gameClient.drawCount
+        if (lastHandCount !== 1) {
+            unoDeclared = false
+        }
 
         infoBanner.show("Hand: " + lastHandCount + " | Ablage: " + gameClient.discardTop + " | Deck: " + lastDrawCount)
+
+        if (gameClient.finished) {
+            if (gameClient.winnerIndex === gameClient.yourIndex) {
+                infoBanner.show("Spiel beendet! Du hast gewonnen.")
+            } else if (gameClient.winnerIndex >= 0) {
+                infoBanner.show("Spiel beendet! Gewinner: Spieler " + (gameClient.winnerIndex + 1))
+            } else {
+                infoBanner.show("Spiel beendet!")
+            }
+        }
     }
 
     Component.onCompleted: applyStateFromClient()
@@ -93,6 +111,45 @@ Item {
         Timer { id: hideTimer; interval: 1800; repeat: false; onTriggered: infoBanner.opacity = 0 }
     }
 
+    Popup {
+        id: colorPicker
+        modal: true
+        focus: true
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2
+        width: 320
+        height: 220
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            color: "white"
+            border.color: "black"
+            border.width: 2
+        }
+
+        Column {
+            anchors.centerIn: parent
+            spacing: 10
+            Text { text: "Farbe wählen"; font.pixelSize: 18; color: "black" }
+
+            Row {
+                spacing: 12
+                Button { text: "Rot"; onClicked: chooseColor("Rot") }
+                Button { text: "Grün"; onClicked: chooseColor("Gruen") }
+                Button { text: "Blau"; onClicked: chooseColor("Blau") }
+                Button { text: "Gelb"; onClicked: chooseColor("Gelb") }
+            }
+
+            Button {
+                text: "Abbrechen"
+                onClicked: {
+                    pendingWildCard = ""
+                    colorPicker.close()
+                }
+            }
+        }
+    }
+
     // Gegnerkarten (oben)
     Row {
         id: enemyRow
@@ -105,15 +162,16 @@ Item {
             model: opponentsCount
             delegate: Item {
                 width: 90; height: 130
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 8
-                    color: "white"
-                    border.color: "black"
-                    border.width: 2
-                    Image {
-                        anchors.fill: parent
-                        anchors.margins: 6
+                property int globalIndex: index < gameClient.yourIndex ? index : index + 1
+                property int cardCount: gameClient.handCounts.length > globalIndex ? gameClient.handCounts[globalIndex] : 0
+
+                Repeater {
+                    model: cardCount
+                    delegate: Image {
+                        width: 60
+                        height: 90
+                        x: 0
+                        y: index * 15
                         source: "qrc:/assets/images/cards/Gegnerkarte.jpg"
                         fillMode: Image.PreserveAspectFit
                         smooth: true
@@ -168,11 +226,16 @@ Item {
             height: 180
             text: "Karte\nziehen"
             font.pixelSize: 16
+            enabled: gameClient.hasGameInit && isYourTurn()
             background: Rectangle { color: "#d9d9d9"; border.color: "black"; border.width: 2; radius: 8 }
 
             onClicked: {
                 if (!gameClient.hasGameInit) {
                     infoBanner.show("Spiel nicht initialisiert.")
+                    return
+                }
+                if (!isYourTurn()) {
+                    infoBanner.show("Nicht dein Zug.")
                     return
                 }
                 gameClient.drawCards(1)
@@ -219,8 +282,152 @@ Item {
                             else if (source.indexOf(".jpg") !== -1) source = source.replace(".jpg", ".png")
                         }
                     }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (!isYourTurn()) {
+                                infoBanner.show("Nicht dein Zug.")
+                                return
+                            }
+                            if (!isLegalCard(modelData)) {
+                                infoBanner.show("Diese Karte ist nicht erlaubt.")
+                                return
+                            }
+                            if (requiresColor(modelData)) {
+                                pendingWildCard = modelData
+                                colorPicker.open()
+                                return
+                            }
+                            gameClient.playCard(modelData)
+                        }
+                    }
                 }
             }
         }
+    }
+
+    Button {
+        id: unoButton
+        text: "UNO!"
+        width: 120
+        height: 50
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 30
+        anchors.bottomMargin: 120
+        visible: gameClient.hasGameInit && !gameClient.finished && gameClient.hand.length === 1
+        enabled: !unoDeclared
+
+        background: Rectangle {
+            color: unoDeclared ? "#cccccc" : "#ff4444"
+            radius: 10
+            border.color: "black"
+            border.width: 2
+        }
+
+        onClicked: {
+            unoDeclared = true
+            infoBanner.show("UNO!")
+            gameClient.declareUno()
+        }
+    }
+
+    Button {
+        id: downloadLogButton
+        text: "CSV herunterladen"
+        width: 170
+        height: 40
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 30
+        anchors.bottomMargin: 60
+        visible: gameClient.finished && gameClient.hasGameLog
+
+        background: Rectangle {
+            color: "white"
+            border.color: "black"
+            border.width: 2
+            radius: 6
+        }
+
+        onClicked: logFileDialog.open()
+    }
+
+    FileDialog {
+        id: logFileDialog
+        title: "CSV speichern"
+        nameFilters: ["CSV Dateien (*.csv)"]
+        fileMode: FileDialog.SaveFile
+        onAccepted: {
+            if (!gameClient.saveGameLog(logFileDialog.file)) {
+                infoBanner.show("CSV konnte nicht gespeichert werden.")
+            } else {
+                infoBanner.show("CSV gespeichert.")
+            }
+        }
+    }
+
+    function isYourTurn() {
+        return gameClient.hasGameInit &&
+               !gameClient.finished &&
+               gameClient.currentPlayerIndex === gameClient.yourIndex
+    }
+
+    function activeOpponentIndex() {
+        if (!gameClient.hasGameInit || gameClient.players === 0) {
+            return -1
+        }
+        if (gameClient.currentPlayerIndex === gameClient.yourIndex) {
+            return (gameClient.yourIndex + 1) % gameClient.players
+        }
+        return gameClient.currentPlayerIndex
+    }
+
+    function parseCard(cardId) {
+        var base = normalizeCardName(cardId)
+        var dot = base.lastIndexOf(".")
+        if (dot >= 0) {
+            base = base.slice(0, dot)
+        }
+        var parts = base.split("_")
+        if (parts.length === 0) {
+            return { color: "", value: "", wild: false }
+        }
+        if (parts[0] === "Extra") {
+            return { color: "Extra", value: parts.slice(1).join("_"), wild: true }
+        }
+        return { color: parts[0], value: parts.slice(1).join("_"), wild: false }
+    }
+
+    function isLegalCard(cardId) {
+        if (!lastDiscardId || lastDiscardId.length === 0) {
+            return true
+        }
+        var playInfo = parseCard(cardId)
+        if (playInfo.wild) {
+            return true
+        }
+        var topInfo = parseCard(lastDiscardId)
+        if (topInfo.wild) {
+            return gameClient.currentColor && playInfo.color === gameClient.currentColor
+        }
+        return playInfo.color === topInfo.color || playInfo.value === topInfo.value
+    }
+
+    function requiresColor(cardId) {
+        var info = parseCard(cardId)
+        return info.wild
+    }
+
+    function chooseColor(colorName) {
+        if (pendingWildCard.length === 0) {
+            colorPicker.close()
+            return
+        }
+        gameClient.playCard(pendingWildCard, colorName)
+        pendingWildCard = ""
+        colorPicker.close()
     }
 }
