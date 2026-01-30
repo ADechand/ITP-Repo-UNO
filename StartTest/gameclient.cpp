@@ -3,6 +3,9 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QDebug>
+#include <QFile>
+#include <QTextStream>
+#include <QUrl>
 
 GameClient::GameClient(QObject* parent) : QObject(parent)
 {
@@ -65,10 +68,19 @@ GameClient::GameClient(QObject* parent) : QObject(parent)
                 m_drawCount = o.value("drawCount").toInt();
                 m_players = o.value("players").toInt();
                 m_yourIndex = o.value("yourIndex").toInt();
+                m_currentPlayerIndex = o.value("currentPlayerIndex").toInt();
+                m_currentColor = o.value("currentColor").toString();
+                m_finished = o.value("finished").toBool(false);
+                m_winnerIndex = -1;
+                m_gameLog.clear();
 
                 m_hand.clear();
                 const QJsonArray arr = o.value("hand").toArray();
                 for (const QJsonValue& v : arr) m_hand << v.toString();
+
+                m_handCounts.clear();
+                const QJsonArray countsArr = o.value("handCounts").toArray();
+                for (const QJsonValue& v : countsArr) m_handCounts << v.toInt();
 
                 emit gameStateChanged();
                 emit info(QString("game_init: hand=%1 discard=%2").arg(m_hand.size()).arg(m_discardTop));
@@ -79,9 +91,43 @@ GameClient::GameClient(QObject* parent) : QObject(parent)
                 const QJsonArray arr = o.value("cards").toArray();
                 for (const QJsonValue& v : arr) m_hand << v.toString();
                 m_drawCount = o.value("drawCount").toInt();
+                m_currentPlayerIndex = o.value("currentPlayerIndex").toInt();
 
                 emit gameStateChanged();
                 emit info(QString("cards_drawn: +%1").arg(arr.size()));
+                continue;
+            }
+
+            if (type == "state_update") {
+                m_discardTop = o.value("discardTop").toString();
+                m_drawCount = o.value("drawCount").toInt();
+                m_currentPlayerIndex = o.value("currentPlayerIndex").toInt();
+                m_currentColor = o.value("currentColor").toString();
+                m_finished = o.value("finished").toBool(false);
+
+                m_handCounts.clear();
+                const QJsonArray countsArr = o.value("handCounts").toArray();
+                for (const QJsonValue& v : countsArr) m_handCounts << v.toInt();
+
+                emit gameStateChanged();
+                continue;
+            }
+
+            if (type == "card_played") {
+                const int playerIndex = o.value("playerIndex").toInt();
+                const QString card = o.value("card").toString();
+                if (playerIndex == m_yourIndex) {
+                    m_hand.removeOne(card);
+                    emit gameStateChanged();
+                }
+                continue;
+            }
+
+            if (type == "game_finished") {
+                m_finished = true;
+                m_winnerIndex = o.value("winnerIndex").toInt(-1);
+                m_gameLog = o.value("logCsv").toString();
+                emit gameStateChanged();
                 continue;
             }
 
@@ -131,4 +177,33 @@ void GameClient::drawCards(int count)
     if (count < 1) count = 1;
     if (count > 10) count = 10;
     sendJson(QJsonObject{{"type","draw_cards"},{"count",count}});
+}
+
+void GameClient::playCard(const QString& card, const QString& chosenColor)
+{
+    QJsonObject payload{{"type","play_card"},{"card",card}};
+    if (!chosenColor.isEmpty()) {
+        payload.insert("chosenColor", chosenColor);
+    }
+    sendJson(payload);
+}
+
+void GameClient::declareUno()
+{
+    sendJson(QJsonObject{{"type","declare_uno"}});
+}
+
+bool GameClient::saveGameLog(const QString& fileUrl)
+{
+    const QString path = QUrl(fileUrl).toLocalFile();
+    if (path.isEmpty() || m_gameLog.isEmpty())
+        return false;
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    QTextStream out(&file);
+    out << m_gameLog;
+    return true;
 }
