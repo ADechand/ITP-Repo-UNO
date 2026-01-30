@@ -1,5 +1,0 @@
-<RCC>
-  <qresource prefix="/">
-    <file>StartPage.qml</file>
-  </qresource>
-</RCC>

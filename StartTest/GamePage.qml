@@ -177,6 +177,15 @@ Item {
                         smooth: true
                     }
                 }
+
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.bottom
+                    anchors.topMargin: 6
+                    text: showCount ? (cardCount + " Karten") : "?"
+                    font.pixelSize: 16
+                    color: "black"
+                }
             }
         }
     }
