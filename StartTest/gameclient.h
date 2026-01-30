@@ -21,7 +21,6 @@ class GameClient : public QObject
     Q_PROPERTY(int yourIndex READ yourIndex NOTIFY gameStateChanged)
     Q_PROPERTY(int currentPlayerIndex READ currentPlayerIndex NOTIFY gameStateChanged)
     Q_PROPERTY(QVariantList handCounts READ handCounts NOTIFY gameStateChanged)
-    Q_PROPERTY(QString currentColor READ currentColor NOTIFY gameStateChanged)
 
 public:
     explicit GameClient(QObject* parent = nullptr);
@@ -37,7 +36,6 @@ public:
     int yourIndex() const { return m_yourIndex; }
     int currentPlayerIndex() const { return m_currentPlayerIndex; }
     QVariantList handCounts() const { return m_handCounts; }
-    QString currentColor() const { return m_currentColor; }
 
     Q_INVOKABLE void connectToServer(const QString& host, int port);
     Q_INVOKABLE void disconnectFromServer();
@@ -47,7 +45,7 @@ public:
     Q_INVOKABLE void startGame(const QString& code);
 
     Q_INVOKABLE void drawCards(int count = 1);
-    Q_INVOKABLE void playCard(const QString& card, const QString& chosenColor = QString());
+    Q_INVOKABLE void playCard(const QString& card);
 
 signals:
     void info(QString msg);
@@ -79,5 +77,4 @@ private:
     int m_yourIndex = -1;
     int m_currentPlayerIndex = 0;
     QVariantList m_handCounts;
-    QString m_currentColor;
 };
