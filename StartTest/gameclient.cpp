@@ -66,6 +66,7 @@ GameClient::GameClient(QObject* parent) : QObject(parent)
                 m_players = o.value("players").toInt();
                 m_yourIndex = o.value("yourIndex").toInt();
                 m_currentPlayerIndex = o.value("currentPlayerIndex").toInt();
+                m_currentColor = o.value("currentColor").toString();
 
                 m_hand.clear();
                 const QJsonArray arr = o.value("hand").toArray();
@@ -95,6 +96,7 @@ GameClient::GameClient(QObject* parent) : QObject(parent)
                 m_discardTop = o.value("discardTop").toString();
                 m_drawCount = o.value("drawCount").toInt();
                 m_currentPlayerIndex = o.value("currentPlayerIndex").toInt();
+                m_currentColor = o.value("currentColor").toString();
 
                 m_handCounts.clear();
                 const QJsonArray countsArr = o.value("handCounts").toArray();
@@ -162,7 +164,11 @@ void GameClient::drawCards(int count)
     sendJson(QJsonObject{{"type","draw_cards"},{"count",count}});
 }
 
-void GameClient::playCard(const QString& card)
+void GameClient::playCard(const QString& card, const QString& chosenColor)
 {
-    sendJson(QJsonObject{{"type","play_card"},{"card",card}});
+    QJsonObject payload{{"type","play_card"},{"card",card}};
+    if (!chosenColor.isEmpty()) {
+        payload.insert("chosenColor", chosenColor);
+    }
+    sendJson(payload);
 }

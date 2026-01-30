@@ -291,6 +291,11 @@ Item {
                                 infoBanner.show("Diese Karte ist nicht erlaubt.")
                                 return
                             }
+                            if (requiresColor(modelData)) {
+                                pendingWildCard = modelData
+                                colorPicker.open()
+                                return
+                            }
                             gameClient.playCard(modelData)
                         }
                     }
@@ -339,8 +344,23 @@ Item {
         }
         var topInfo = parseCard(lastDiscardId)
         if (topInfo.wild) {
-            return true
+            return gameClient.currentColor && playInfo.color === gameClient.currentColor
         }
         return playInfo.color === topInfo.color || playInfo.value === topInfo.value
+    }
+
+    function requiresColor(cardId) {
+        var info = parseCard(cardId)
+        return info.wild
+    }
+
+    function chooseColor(colorName) {
+        if (pendingWildCard.length === 0) {
+            colorPicker.close()
+            return
+        }
+        gameClient.playCard(pendingWildCard, colorName)
+        pendingWildCard = ""
+        colorPicker.close()
     }
 }

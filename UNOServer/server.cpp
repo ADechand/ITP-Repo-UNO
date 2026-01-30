@@ -147,7 +147,8 @@ void Server::handleMessage(QTcpSocket* sock, const QJsonObject& msg)
             sendJson(sock, QJsonObject{{"type","error"},{"message","Missing card"}});
             return;
         }
-        playCard(sock, card);
+        const QString chosenColor = msg.value("chosenColor").toString();
+        playCard(sock, card, chosenColor);
         return;
     }
 
@@ -193,7 +194,7 @@ void Server::drawCards(QTcpSocket* sock, int count)
         return;
     }
 
-    g->currentPlayerIndex = (g->currentPlayerIndex + 1) % g->players.size();
+    g->currentPlayerIndex = advanceIndex(g->currentPlayerIndex, 1, g->direction, g->players.size());
 
     sendJson(sock, QJsonObject{
                        {"type","cards_drawn"},
@@ -220,7 +221,7 @@ int Server::indexOfPlayer(GameState* g, QTcpSocket* sock) const
     return g ? g->players.indexOf(sock) : -1;
 }
 
-bool Server::isCardLegal(const QString& card, const QString& topDiscard) const
+bool Server::isCardLegal(const QString& card, const QString& topDiscard, const QString& currentColor) const
 {
     if (topDiscard.isEmpty())
         return true;
@@ -231,9 +232,34 @@ bool Server::isCardLegal(const QString& card, const QString& topDiscard) const
 
     const CardInfo topInfo = parseCardInfo(topDiscard);
     if (topInfo.isWild)
-        return true;
+        return !currentColor.isEmpty() && playInfo.color == currentColor;
 
     return playInfo.color == topInfo.color || playInfo.value == topInfo.value;
+}
+
+int Server::advanceIndex(int startIndex, int steps, int direction, int playerCount) const
+{
+    if (playerCount <= 0)
+        return 0;
+    int idx = startIndex;
+    for (int i = 0; i < steps; ++i) {
+        idx = (idx + direction) % playerCount;
+        if (idx < 0) idx += playerCount;
+    }
+    return idx;
+}
+
+void Server::drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count) const
+{
+    if (!g || !sock || count <= 0)
+        return;
+
+    QStringList& hand = g->hands[sock];
+    for (int i = 0; i < count; ++i) {
+        if (g->deck.isEmpty())
+            break;
+        hand.append(g->deck.takeLast());
+    }
 }
 
 void Server::sendStateUpdate(GameState* g, const QString& lastPlayedCard, int playedBy)
@@ -249,7 +275,8 @@ void Server::sendStateUpdate(GameState* g, const QString& lastPlayedCard, int pl
         {"discardTop", g->discard.isEmpty() ? QString() : g->discard.last()},
         {"drawCount", g->deck.size()},
         {"currentPlayerIndex", g->currentPlayerIndex},
-        {"handCounts", counts}
+        {"handCounts", counts},
+        {"currentColor", g->currentColor}
     };
 
     if (!lastPlayedCard.isEmpty())
@@ -412,6 +439,14 @@ void Server::startGame(QTcpSocket* sock, const QString& code)
     g->discard.append(g->deck.takeLast());
     g->started = true;
     g->currentPlayerIndex = 0;
+    g->direction = 1;
+
+    const CardInfo topInfo = parseCardInfo(g->discard.last());
+    if (topInfo.isWild) {
+        g->currentColor = "Rot";
+    } else {
+        g->currentColor = topInfo.color;
+    }
 
     const int players = g->players.size();
     const QString discardTop = g->discard.last();
@@ -440,14 +475,15 @@ void Server::startGame(QTcpSocket* sock, const QString& code)
             {"drawCount",drawCount},
             {"hand",handArr},
             {"currentPlayerIndex",g->currentPlayerIndex},
-            {"handCounts",handCounts}
+            {"handCounts",handCounts},
+            {"currentColor", g->currentColor}
         };
 
         sendJson(p, init);
     }
 }
 
-void Server::playCard(QTcpSocket* sock, const QString& card)
+void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chosenColor)
 {
     const QString code = m_socketToGame.value(sock);
     if (code.isEmpty()) {
@@ -472,9 +508,23 @@ void Server::playCard(QTcpSocket* sock, const QString& card)
         return;
     }
 
-    if (!isCardLegal(card, g->discard.isEmpty() ? QString() : g->discard.last())) {
+    if (!isCardLegal(card, g->discard.isEmpty() ? QString() : g->discard.last(), g->currentColor)) {
         sendJson(sock, QJsonObject{{"type","error"},{"message","Illegal card"}});
         return;
+    }
+
+    const CardInfo playInfo = parseCardInfo(card);
+    if (playInfo.isWild && chosenColor.isEmpty()) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Missing chosen color"}});
+        return;
+    }
+
+    if (playInfo.isWild) {
+        const QString upper = chosenColor.trimmed();
+        if (upper != "Rot" && upper != "Gruen" && upper != "Blau" && upper != "Gelb") {
+            sendJson(sock, QJsonObject{{"type","error"},{"message","Invalid color"}});
+            return;
+        }
     }
 
     QStringList& hand = g->hands[sock];
@@ -484,7 +534,31 @@ void Server::playCard(QTcpSocket* sock, const QString& card)
     }
 
     g->discard.append(card);
-    g->currentPlayerIndex = (g->currentPlayerIndex + 1) % g->players.size();
+
+    if (playInfo.isWild) {
+        g->currentColor = chosenColor.trimmed();
+    } else {
+        g->currentColor = playInfo.color;
+    }
+
+    const int playerCount = g->players.size();
+    if (playInfo.isWild && playInfo.value == "4plus") {
+        const int targetIndex = advanceIndex(g->currentPlayerIndex, 1, g->direction, playerCount);
+        QTcpSocket* targetSock = g->players[targetIndex];
+        drawCardsToPlayer(g, targetSock, 4);
+        g->currentPlayerIndex = advanceIndex(g->currentPlayerIndex, 2, g->direction, playerCount);
+    } else if (playInfo.value == "Sperre") {
+        g->currentPlayerIndex = advanceIndex(g->currentPlayerIndex, 2, g->direction, playerCount);
+    } else if (playInfo.value == "Richtungswechsel") {
+        g->direction = -g->direction;
+        if (playerCount == 2) {
+            g->currentPlayerIndex = advanceIndex(g->currentPlayerIndex, 2, g->direction, playerCount);
+        } else {
+            g->currentPlayerIndex = advanceIndex(g->currentPlayerIndex, 1, g->direction, playerCount);
+        }
+    } else {
+        g->currentPlayerIndex = advanceIndex(g->currentPlayerIndex, 1, g->direction, playerCount);
+    }
 
     QJsonObject played{
         {"type","card_played"},
