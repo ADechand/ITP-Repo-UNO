@@ -1,6 +1,0 @@
-<RCC>
-  <qresource prefix="/">
-    <file alias="/qt/qml/StartTest">/home/user/Projekte_Qt/StartTest/build/Desktop_Qt_6_9_2-Debug/StartTest</file>
-
-  </qresource>
-</RCC>
