@@ -14,6 +14,7 @@ Item {
     property int lastHandCount: 0
     property int lastDrawCount: 0
     property string cardBase: "qrc:/assets/images/cards/"
+    property string pendingWildCard: ""
 
     // Normalisiert alte Namen: "Blau 2" -> "Blau_2.jpg"
     // lässt neue Namen wie "Blau_2.jpg" unverändert
@@ -93,6 +94,45 @@ Item {
         }
 
         Timer { id: hideTimer; interval: 1800; repeat: false; onTriggered: infoBanner.opacity = 0 }
+    }
+
+    Popup {
+        id: colorPicker
+        modal: true
+        focus: true
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2
+        width: 320
+        height: 220
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            color: "white"
+            border.color: "black"
+            border.width: 2
+        }
+
+        Column {
+            anchors.centerIn: parent
+            spacing: 10
+            Text { text: "Farbe wählen"; font.pixelSize: 18; color: "black" }
+
+            Row {
+                spacing: 12
+                Button { text: "Rot"; onClicked: chooseColor("Rot") }
+                Button { text: "Grün"; onClicked: chooseColor("Gruen") }
+                Button { text: "Blau"; onClicked: chooseColor("Blau") }
+                Button { text: "Gelb"; onClicked: chooseColor("Gelb") }
+            }
+
+            Button {
+                text: "Abbrechen"
+                onClicked: {
+                    pendingWildCard = ""
+                    colorPicker.close()
+                }
+            }
+        }
     }
 
     // Gegnerkarten (oben)
