@@ -17,6 +17,8 @@ Item {
     property string cardBase: "qrc:/assets/images/cards/"
     property string pendingWildCard: ""
     property bool unoDeclared: false
+    property bool endPopupShown: false
+    property var graphData: []
 
     // Normalisiert alte Namen: "Blau 2" -> "Blau_2.jpg"
     // lässt neue Namen wie "Blau_2.jpg" unverändert
@@ -66,6 +68,12 @@ Item {
                 infoBanner.show("Spiel beendet! Gewinner: Spieler " + (gameClient.winnerIndex + 1))
             } else {
                 infoBanner.show("Spiel beendet!")
+            }
+            if (!endPopupShown) {
+                endPopupShown = true
+                graphData = buildGraphData(gameClient.gameLog, gameClient.players)
+                gameGraph.requestPaint()
+                endGamePopup.open()
             }
         }
     }
@@ -161,20 +169,22 @@ Item {
         Repeater {
             model: opponentsCount
             delegate: Item {
-                width: 90; height: 130
+                height: 130
                 property int globalIndex: index < gameClient.yourIndex ? index : index + 1
                 property int cardCount: gameClient.handCounts.length > globalIndex ? gameClient.handCounts[globalIndex] : 0
+                width: Math.max(90, cardCount * 70)
 
-                Repeater {
-                    model: cardCount
-                    delegate: Image {
-                        width: 60
-                        height: 90
-                        x: 0
-                        y: index * 15
-                        source: "qrc:/assets/images/cards/Gegnerkarte.jpg"
-                        fillMode: Image.PreserveAspectFit
-                        smooth: true
+                Row {
+                    spacing: 6
+                    Repeater {
+                        model: cardCount
+                        delegate: Image {
+                            width: 60
+                            height: 90
+                            source: "qrc:/assets/images/cards/Gegnerkarte.jpg"
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                        }
                     }
                 }
 
@@ -343,27 +353,6 @@ Item {
         }
     }
 
-    Button {
-        id: downloadLogButton
-        text: "CSV herunterladen"
-        width: 170
-        height: 40
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.rightMargin: 30
-        anchors.bottomMargin: 60
-        visible: gameClient.finished && gameClient.hasGameLog
-
-        background: Rectangle {
-            color: "white"
-            border.color: "black"
-            border.width: 2
-            radius: 6
-        }
-
-        onClicked: logFileDialog.open()
-    }
-
     FileDialog {
         id: logFileDialog
         title: "CSV speichern"
@@ -374,6 +363,95 @@ Item {
                 infoBanner.show("CSV konnte nicht gespeichert werden.")
             } else {
                 infoBanner.show("CSV gespeichert.")
+            }
+        }
+    }
+
+    Popup {
+        id: endGamePopup
+        modal: true
+        focus: true
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2
+        width: 640
+        height: 420
+        closePolicy: Popup.NoAutoClose
+
+        background: Rectangle {
+            color: "white"
+            border.color: "black"
+            border.width: 2
+        }
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: 16
+            spacing: 12
+
+            Text {
+                text: gameClient.winnerIndex === gameClient.yourIndex
+                      ? "Du hast gewonnen!"
+                      : "Du hast verloren!"
+                font.pixelSize: 22
+                color: "black"
+            }
+
+            Button {
+                text: "CSV herunterladen"
+                enabled: gameClient.hasGameLog
+                onClicked: logFileDialog.open()
+            }
+
+            Button {
+                text: "Graph anzeigen"
+                onClicked: gameGraph.visible = !gameGraph.visible
+            }
+
+            Canvas {
+                id: gameGraph
+                width: parent.width - 32
+                height: 220
+                visible: graphData.length > 0
+                onVisibleChanged: if (visible) requestPaint()
+                onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    if (graphData.length === 0) return
+
+                    var seriesCount = graphData[0].length
+                    var pointsCount = graphData.length
+                    var maxVal = 1
+                    for (var i = 0; i < graphData.length; i++) {
+                        for (var j = 0; j < graphData[i].length; j++) {
+                            maxVal = Math.max(maxVal, graphData[i][j])
+                        }
+                    }
+
+                    var colors = ["#e74c3c", "#3498db", "#2ecc71", "#f1c40f", "#9b59b6", "#e67e22"]
+                    var padding = 20
+                    var plotW = width - padding * 2
+                    var plotH = height - padding * 2
+
+                    ctx.strokeStyle = "#000000"
+                    ctx.beginPath()
+                    ctx.moveTo(padding, padding)
+                    ctx.lineTo(padding, padding + plotH)
+                    ctx.lineTo(padding + plotW, padding + plotH)
+                    ctx.stroke()
+
+                    for (var p = 0; p < seriesCount; p++) {
+                        ctx.strokeStyle = colors[p % colors.length]
+                        ctx.beginPath()
+                        for (var x = 0; x < pointsCount; x++) {
+                            var value = graphData[x][p]
+                            var px = padding + (pointsCount === 1 ? 0 : (x / (pointsCount - 1)) * plotW)
+                            var py = padding + plotH - (value / maxVal) * plotH
+                            if (x === 0) ctx.moveTo(px, py)
+                            else ctx.lineTo(px, py)
+                        }
+                        ctx.stroke()
+                    }
+                }
             }
         }
     }
@@ -438,5 +516,77 @@ Item {
         gameClient.playCard(pendingWildCard, colorName)
         pendingWildCard = ""
         colorPicker.close()
+    }
+
+    function buildGraphData(logCsv, playerCount) {
+        if (!logCsv || logCsv.length === 0 || playerCount === 0) {
+            return []
+        }
+        var lines = logCsv.split("\n")
+        var headerSkipped = false
+        var counts = []
+        var series = []
+
+        function parseLine(line) {
+            var first = line.indexOf(",")
+            if (first < 0) return null
+            var second = line.indexOf(",", first + 1)
+            if (second < 0) return null
+            var third = line.indexOf(",", second + 1)
+            if (third < 0) return null
+            return {
+                event: line.slice(first + 1, second),
+                playerIndex: parseInt(line.slice(second + 1, third)),
+                detail: line.slice(third + 1)
+            }
+        }
+
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim()
+            if (line.length === 0) continue
+            if (!headerSkipped) {
+                headerSkipped = true
+                continue
+            }
+            var parsed = parseLine(line)
+            if (!parsed) continue
+            if (parsed.event === "start") {
+                var handsIndex = parsed.detail.indexOf("hands=")
+                if (handsIndex >= 0) {
+                    var handsPart = parsed.detail.slice(handsIndex + 6)
+                    var comma = handsPart.indexOf(",")
+                    if (comma >= 0) handsPart = handsPart.slice(0, comma)
+                    var parts = handsPart.split("|")
+                    counts = []
+                    for (var p = 0; p < playerCount; p++) {
+                        counts.push(parseInt(parts[p] || "0"))
+                    }
+                    series.push(counts.slice())
+                }
+                continue
+            }
+
+            if (counts.length === 0) {
+                counts = Array(playerCount).fill(0)
+            }
+
+            if (parsed.event === "play") {
+                if (parsed.playerIndex >= 0 && parsed.playerIndex < playerCount) {
+                    counts[parsed.playerIndex] = Math.max(0, counts[parsed.playerIndex] - 1)
+                }
+            } else if (parsed.event === "draw" || parsed.event === "draw_four" || parsed.event === "uno_penalty") {
+                if (parsed.playerIndex >= 0 && parsed.playerIndex < playerCount) {
+                    var drawAmount = 0
+                    var match = parsed.detail.match(/drawn=(\d+)/)
+                    if (match) drawAmount = parseInt(match[1])
+                    if (!drawAmount && parsed.event === "draw") drawAmount = parseInt(parsed.detail)
+                    counts[parsed.playerIndex] += drawAmount
+                }
+            }
+
+            series.push(counts.slice())
+        }
+
+        return series
     }
 }
