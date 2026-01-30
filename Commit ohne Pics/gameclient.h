@@ -4,6 +4,7 @@
 #include <QTcpSocket>
 #include <QStringList>
 #include <QJsonObject>
+#include <QVariantList>
 
 class GameClient : public QObject
 {
@@ -21,6 +22,8 @@ public:
     Q_INVOKABLE void createGame();
     Q_INVOKABLE void joinGame(const QString& code);
     Q_INVOKABLE void startGame(const QString& code);
+    Q_INVOKABLE void drawCards(int count);
+    Q_INVOKABLE void playCard(const QString& card);
 
 signals:
     void info(QString msg);
@@ -30,7 +33,10 @@ signals:
 
     void gameCreated(QString code);
     void joinOk(QString code);
-    void gameInit(QString code, QStringList hand, QString discardTop, int drawCount, int players, int yourIndex);
+    void gameInit(QString code, QStringList hand, QString discardTop, int drawCount, int players, int yourIndex, int currentPlayerIndex, QVariantList handCounts);
+    void cardsDrawn(QStringList cards, int drawCount, int currentPlayerIndex);
+    void stateUpdate(QString discardTop, int drawCount, int currentPlayerIndex, QVariantList handCounts);
+    void cardPlayed(int playerIndex, QString card);
 
 private:
     void sendJson(const QJsonObject& o);

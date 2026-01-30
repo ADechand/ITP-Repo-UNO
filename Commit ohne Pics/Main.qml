@@ -135,7 +135,7 @@ Window {
         function onInfo(msg) { toast.show(msg) }
         function onError(msg) { toast.show("Server: " + msg) }
 
-        function onGameInit(code, hand, discardTop, drawCount, players, yourIndex) {
+        function onGameInit(code, hand, discardTop, drawCount, players, yourIndex, currentPlayerIndex, handCounts) {
             toast.show("Game init: " + code + " (" + players + " Spieler)")
             stack.push(gamePageComponent)
         }
