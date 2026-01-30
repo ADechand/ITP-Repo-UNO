@@ -3,6 +3,39 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QRandomGenerator>
+#include <QDateTime>
+
+namespace {
+struct CardInfo {
+    QString color;
+    QString value;
+    bool isWild = false;
+};
+
+CardInfo parseCardInfo(const QString& cardName)
+{
+    QString base = cardName;
+    const int dot = base.lastIndexOf('.');
+    if (dot >= 0)
+        base = base.left(dot);
+
+    const QStringList parts = base.split('_');
+    CardInfo info;
+    if (parts.isEmpty())
+        return info;
+
+    if (parts.first() == "Extra") {
+        info.isWild = true;
+        info.color = "Extra";
+        info.value = parts.mid(1).join("_");
+        return info;
+    }
+
+    info.color = parts.value(0);
+    info.value = parts.mid(1).join("_");
+    return info;
+}
+} // namespace
 
 namespace {
 struct CardInfo {
@@ -152,6 +185,11 @@ void Server::handleMessage(QTcpSocket* sock, const QJsonObject& msg)
         return;
     }
 
+    if (type == "declare_uno") {
+        declareUno(sock);
+        return;
+    }
+
     sendJson(sock, QJsonObject{{"type","error"},{"message","Unknown message type"}});
 }
 
@@ -183,10 +221,18 @@ void Server::drawCards(QTcpSocket* sock, int count)
         return;
     }
 
+    applyUnoPenaltyIfNeeded(g, g->currentPlayerIndex);
+
+    if (g->pendingUnoPlayerIndex == g->currentPlayerIndex) {
+        g->pendingUnoPlayerIndex = -1;
+        g->pendingUnoDeclared = false;
+    }
+
     QStringList& hand = g->hands[sock];
     QJsonArray cardsArr;
 
     for (int i = 0; i < count; ++i) {
+        refillDeck(g);
         if (g->deck.isEmpty()) break;
         const QString card = g->deck.takeLast();
         hand.append(card);
@@ -208,6 +254,7 @@ void Server::drawCards(QTcpSocket* sock, int count)
                    });
 
     sendStateUpdate(g);
+    appendLog(g, "draw", g->currentPlayerIndex, QString::number(cardsArr.size()));
 
     qInfo() << "[GAME]" << code << "draw_cards count=" << cardsArr.size()
             << "remaining=" << g->deck.size();
@@ -253,7 +300,7 @@ int Server::advanceIndex(int startIndex, int steps, int direction, int playerCou
     return idx;
 }
 
-QStringList Server::drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count) const
+QStringList Server::drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count)
 {
     QStringList drawn;
     if (!g || !sock || count <= 0)
@@ -261,6 +308,7 @@ QStringList Server::drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count)
 
     QStringList& hand = g->hands[sock];
     for (int i = 0; i < count; ++i) {
+        refillDeck(g);
         if (g->deck.isEmpty())
             break;
         const QString card = g->deck.takeLast();
@@ -268,6 +316,64 @@ QStringList Server::drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count)
         drawn.append(card);
     }
     return drawn;
+}
+
+void Server::refillDeck(GameState* g)
+{
+    if (!g || !g->deck.isEmpty())
+        return;
+
+    if (g->discard.size() <= 1)
+        return;
+
+    const QString top = g->discard.takeLast();
+    g->deck = g->discard;
+    g->discard.clear();
+    g->discard.append(top);
+    shuffle(g->deck);
+    appendLog(g, "reshuffle", -1, QString("deck=%1").arg(g->deck.size()));
+}
+
+void Server::appendLog(GameState* g, const QString& event, int playerIndex, const QString& detail)
+{
+    if (!g) return;
+    const QString timestamp = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    g->logLines.append(QString("%1,%2,%3,%4")
+                       .arg(timestamp,
+                            event,
+                            QString::number(playerIndex),
+                            detail.replace('\n', ' ')));
+}
+
+void Server::applyUnoPenaltyIfNeeded(GameState* g, int currentPlayerIndex)
+{
+    if (!g) return;
+    if (g->pendingUnoPlayerIndex < 0 || g->pendingUnoDeclared)
+        return;
+    if (g->pendingUnoPlayerIndex == currentPlayerIndex)
+        return;
+
+    const int penalizedIndex = g->pendingUnoPlayerIndex;
+    QTcpSocket* penalizedSock = g->players.value(penalizedIndex, nullptr);
+    if (!penalizedSock)
+        return;
+
+    QStringList drawn = drawCardsToPlayer(g, penalizedSock, 2);
+    if (!drawn.isEmpty()) {
+        QJsonArray cardsArr;
+        for (const QString& c : drawn)
+            cardsArr.append(c);
+        sendJson(penalizedSock, QJsonObject{
+                                   {"type","cards_drawn"},
+                                   {"cards", cardsArr},
+                                   {"drawCount", g->deck.size()},
+                                   {"currentPlayerIndex", g->currentPlayerIndex}
+                               });
+        appendLog(g, "uno_penalty", penalizedIndex, QString("drawn=%1").arg(drawn.size()));
+    }
+
+    g->pendingUnoPlayerIndex = -1;
+    g->pendingUnoDeclared = false;
 }
 
 void Server::sendStateUpdate(GameState* g, const QString& lastPlayedCard, int playedBy)
@@ -450,6 +556,10 @@ void Server::startGame(QTcpSocket* sock, const QString& code)
     g->currentPlayerIndex = 0;
     g->direction = 1;
     g->finished = false;
+    g->pendingUnoPlayerIndex = -1;
+    g->pendingUnoDeclared = false;
+    g->logLines.clear();
+    g->logLines.append("timestamp,event,playerIndex,detail");
 
     const CardInfo topInfo = parseCardInfo(g->discard.last());
     if (topInfo.isWild) {
@@ -457,6 +567,7 @@ void Server::startGame(QTcpSocket* sock, const QString& code)
     } else {
         g->currentColor = topInfo.color;
     }
+    appendLog(g, "start", -1, QString("discard=%1").arg(g->discard.last()));
 
     const int players = g->players.size();
     const QString discardTop = g->discard.last();
@@ -523,6 +634,8 @@ void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chos
         return;
     }
 
+    applyUnoPenaltyIfNeeded(g, g->currentPlayerIndex);
+
     if (!isCardLegal(card, g->discard.isEmpty() ? QString() : g->discard.last(), g->currentColor)) {
         sendJson(sock, QJsonObject{{"type","error"},{"message","Illegal card"}});
         return;
@@ -548,6 +661,11 @@ void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chos
         return;
     }
 
+    if (g->pendingUnoPlayerIndex == playerIndex) {
+        g->pendingUnoPlayerIndex = -1;
+        g->pendingUnoDeclared = false;
+    }
+
     g->discard.append(card);
 
     if (playInfo.isWild) {
@@ -562,6 +680,7 @@ void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chos
     if (playInfo.isWild && playInfo.value == "4plus") {
         const int targetIndex = advanceIndex(g->currentPlayerIndex, 1, g->direction, playerCount);
         QTcpSocket* targetSock = g->players[targetIndex];
+        refillDeck(g);
         drawnCards = drawCardsToPlayer(g, targetSock, 4);
         drawnByIndex = targetIndex;
         g->currentPlayerIndex = advanceIndex(g->currentPlayerIndex, 2, g->direction, playerCount);
@@ -577,6 +696,8 @@ void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chos
     } else {
         g->currentPlayerIndex = advanceIndex(g->currentPlayerIndex, 1, g->direction, playerCount);
     }
+
+    appendLog(g, "play", playerIndex, QString("%1|color=%2").arg(card, g->currentColor));
 
     QJsonObject played{
         {"type","card_played"},
@@ -598,19 +719,58 @@ void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chos
                                {"drawCount", g->deck.size()},
                                {"currentPlayerIndex", g->currentPlayerIndex}
                            });
+        appendLog(g, "draw_four", drawnByIndex, QString("drawn=%1").arg(drawnCards.size()));
+    }
+
+    if (hand.size() == 1) {
+        g->pendingUnoPlayerIndex = playerIndex;
+        g->pendingUnoDeclared = false;
+        appendLog(g, "uno_pending", playerIndex, "needs_declare");
     }
 
     if (hand.isEmpty()) {
         g->finished = true;
         QJsonObject finished{
             {"type","game_finished"},
-            {"winnerIndex", playerIndex}
+            {"winnerIndex", playerIndex},
+            {"logCsv", g->logLines.join("\n")}
         };
         for (QTcpSocket* p : g->players)
             sendJson(p, finished);
+        appendLog(g, "win", playerIndex, "hand_empty");
     }
 
     sendStateUpdate(g, card, playerIndex);
 
     qInfo() << "[GAME]" << code << "play_card player=" << playerIndex << "card=" << card;
+}
+
+void Server::declareUno(QTcpSocket* sock)
+{
+    const QString code = m_socketToGame.value(sock);
+    if (code.isEmpty()) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Not in a game"}});
+        return;
+    }
+
+    GameState* g = getGame(code);
+    if (!g || !g->started) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Game not started"}});
+        return;
+    }
+
+    const int playerIndex = indexOfPlayer(g, sock);
+    if (playerIndex < 0) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","Not a player"}});
+        return;
+    }
+
+    if (g->pendingUnoPlayerIndex != playerIndex) {
+        sendJson(sock, QJsonObject{{"type","error"},{"message","UNO not required"}});
+        return;
+    }
+
+    g->pendingUnoDeclared = true;
+    appendLog(g, "uno_declared", playerIndex, "ok");
+    sendJson(sock, QJsonObject{{"type","uno_ok"}});
 }

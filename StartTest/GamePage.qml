@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import Qt.labs.platform 1.1
 
 Item {
     id: root
@@ -162,17 +163,15 @@ Item {
             delegate: Item {
                 width: 90; height: 130
                 property int globalIndex: index < gameClient.yourIndex ? index : index + 1
-                property bool showCount: globalIndex === activeOpponentIndex()
                 property int cardCount: gameClient.handCounts.length > globalIndex ? gameClient.handCounts[globalIndex] : 0
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 8
-                    color: "white"
-                    border.color: "black"
-                    border.width: 2
-                    Image {
-                        anchors.fill: parent
-                        anchors.margins: 6
+
+                Repeater {
+                    model: cardCount
+                    delegate: Image {
+                        width: 60
+                        height: 90
+                        x: 0
+                        y: index * 15
                         source: "qrc:/assets/images/cards/Gegnerkarte.jpg"
                         fillMode: Image.PreserveAspectFit
                         smooth: true
@@ -340,6 +339,42 @@ Item {
         onClicked: {
             unoDeclared = true
             infoBanner.show("UNO!")
+            gameClient.declareUno()
+        }
+    }
+
+    Button {
+        id: downloadLogButton
+        text: "CSV herunterladen"
+        width: 170
+        height: 40
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 30
+        anchors.bottomMargin: 60
+        visible: gameClient.finished && gameClient.hasGameLog
+
+        background: Rectangle {
+            color: "white"
+            border.color: "black"
+            border.width: 2
+            radius: 6
+        }
+
+        onClicked: logFileDialog.open()
+    }
+
+    FileDialog {
+        id: logFileDialog
+        title: "CSV speichern"
+        nameFilters: ["CSV Dateien (*.csv)"]
+        fileMode: FileDialog.SaveFile
+        onAccepted: {
+            if (!gameClient.saveGameLog(logFileDialog.file)) {
+                infoBanner.show("CSV konnte nicht gespeichert werden.")
+            } else {
+                infoBanner.show("CSV gespeichert.")
+            }
         }
     }
 

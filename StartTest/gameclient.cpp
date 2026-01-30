@@ -3,6 +3,9 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QDebug>
+#include <QFile>
+#include <QTextStream>
+#include <QUrl>
 
 GameClient::GameClient(QObject* parent) : QObject(parent)
 {
@@ -69,6 +72,7 @@ GameClient::GameClient(QObject* parent) : QObject(parent)
                 m_currentColor = o.value("currentColor").toString();
                 m_finished = o.value("finished").toBool(false);
                 m_winnerIndex = -1;
+                m_gameLog.clear();
 
                 m_hand.clear();
                 const QJsonArray arr = o.value("hand").toArray();
@@ -122,6 +126,7 @@ GameClient::GameClient(QObject* parent) : QObject(parent)
             if (type == "game_finished") {
                 m_finished = true;
                 m_winnerIndex = o.value("winnerIndex").toInt(-1);
+                m_gameLog = o.value("logCsv").toString();
                 emit gameStateChanged();
                 continue;
             }
@@ -181,4 +186,24 @@ void GameClient::playCard(const QString& card, const QString& chosenColor)
         payload.insert("chosenColor", chosenColor);
     }
     sendJson(payload);
+}
+
+void GameClient::declareUno()
+{
+    sendJson(QJsonObject{{"type","declare_uno"}});
+}
+
+bool GameClient::saveGameLog(const QString& fileUrl)
+{
+    const QString path = QUrl(fileUrl).toLocalFile();
+    if (path.isEmpty() || m_gameLog.isEmpty())
+        return false;
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    QTextStream out(&file);
+    out << m_gameLog;
+    return true;
 }

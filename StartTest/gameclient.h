@@ -24,6 +24,8 @@ class GameClient : public QObject
     Q_PROPERTY(QString currentColor READ currentColor NOTIFY gameStateChanged)
     Q_PROPERTY(bool finished READ finished NOTIFY gameStateChanged)
     Q_PROPERTY(int winnerIndex READ winnerIndex NOTIFY gameStateChanged)
+    Q_PROPERTY(QString gameLog READ gameLog NOTIFY gameStateChanged)
+    Q_PROPERTY(bool hasGameLog READ hasGameLog NOTIFY gameStateChanged)
 
 public:
     explicit GameClient(QObject* parent = nullptr);
@@ -42,6 +44,8 @@ public:
     QString currentColor() const { return m_currentColor; }
     bool finished() const { return m_finished; }
     int winnerIndex() const { return m_winnerIndex; }
+    QString gameLog() const { return m_gameLog; }
+    bool hasGameLog() const { return !m_gameLog.isEmpty(); }
 
     Q_INVOKABLE void connectToServer(const QString& host, int port);
     Q_INVOKABLE void disconnectFromServer();
@@ -52,6 +56,8 @@ public:
 
     Q_INVOKABLE void drawCards(int count = 1);
     Q_INVOKABLE void playCard(const QString& card, const QString& chosenColor = QString());
+    Q_INVOKABLE void declareUno();
+    Q_INVOKABLE bool saveGameLog(const QString& fileUrl);
 
 signals:
     void info(QString msg);
@@ -86,4 +92,5 @@ private:
     QString m_currentColor;
     bool m_finished = false;
     int m_winnerIndex = -1;
+    QString m_gameLog;
 };

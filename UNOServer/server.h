@@ -16,6 +16,9 @@ struct GameState {
     int direction = 1;
     QString currentColor;
     bool finished = false;
+    int pendingUnoPlayerIndex = -1;
+    bool pendingUnoDeclared = false;
+    QStringList logLines;
 
     QStringList deck;                           // draw pile (oben = last)
     QStringList discard;                        // discard pile (oben = last)
@@ -43,6 +46,7 @@ private:
     void startGame(QTcpSocket* sock, const QString& code);
     void drawCards(QTcpSocket* sock, int count);
     void playCard(QTcpSocket* sock, const QString& card, const QString& chosenColor);
+    void declareUno(QTcpSocket* sock);
 
     QStringList buildDeckFromStaticList() const;
     void shuffle(QStringList& list) const;
@@ -50,7 +54,10 @@ private:
     int indexOfPlayer(GameState* g, QTcpSocket* sock) const;
     bool isCardLegal(const QString& card, const QString& topDiscard, const QString& currentColor) const;
     int advanceIndex(int startIndex, int steps, int direction, int playerCount) const;
-    QStringList drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count) const;
+    QStringList drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count);
+    void refillDeck(GameState* g);
+    void appendLog(GameState* g, const QString& event, int playerIndex, const QString& detail);
+    void applyUnoPenaltyIfNeeded(GameState* g, int currentPlayerIndex);
 
 private:
     QTcpServer m_server;
