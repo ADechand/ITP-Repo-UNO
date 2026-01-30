@@ -307,11 +307,13 @@ void Server::appendLog(GameState* g, const QString& event, int playerIndex, cons
 {
     if (!g) return;
     const QString timestamp = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    QString cleanedDetail = detail;
+    cleanedDetail.replace('\n', ' ');
     g->logLines.append(QString("%1,%2,%3,%4")
                        .arg(timestamp,
                             event,
                             QString::number(playerIndex),
-                            detail.replace('\n', ' ')));
+                            cleanedDetail));
 }
 
 void Server::applyUnoPenaltyIfNeeded(GameState* g, int currentPlayerIndex)
