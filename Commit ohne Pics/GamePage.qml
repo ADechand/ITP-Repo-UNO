@@ -13,6 +13,11 @@ Item {
     property int unoPenaltyCards: 2
     property int unoWindowMs: 2500
     property int opponentsCount: 6   // Anzahl Gegner (später vom Server)
+    property int playersCount: 0
+    property int yourIndex: 0
+    property int currentPlayerIndex: 0
+    property var handCounts: []
+    property string lastDiscardId: ""
 
     // Hand als Model (statt nur handCount)
     ListModel { id: handModel }
@@ -24,17 +29,23 @@ Item {
     Connections {
         target: gameClient
 
-        function onGameInit(code, hand, discardTop, drawCount, players, yourIndex) {
+        function onGameInit(code, hand, discardTop, drawCount, players, yourIndex, currentPlayerIndex, handCounts) {
             // Hand neu setzen
             handModel.clear()
             for (var i = 0; i < hand.length; i++) {
-                handModel.append({ src: "qrc:/assets/images/cards/" + hand[i] })
+                handModel.append({ src: "qrc:/assets/images/cards/" + hand[i], cardId: hand[i] })
             }
 
             // Discard setzen
-            if (discardTop && discardTop.length > 0)
+            if (discardTop && discardTop.length > 0) {
+                root.lastDiscardId = discardTop
                 root.lastDiscard = "qrc:/assets/images/cards/" + discardTop
+            }
 
+            root.playersCount = players
+            root.yourIndex = yourIndex
+            root.currentPlayerIndex = currentPlayerIndex
+            root.handCounts = handCounts
             root.opponentsCount = Math.max(0, players - 1)
             infoBanner.show("Game gestartet! Spieler: " + players)
         }
@@ -47,6 +58,30 @@ Item {
             }
 
         function onError(msg) { infoBanner.show("Server: " + msg) }
+
+        function onCardsDrawn(cards, drawCount, currentPlayerIndex) {
+            for (var i = 0; i < cards.length; i++) {
+                handModel.append({ src: "qrc:/assets/images/cards/" + cards[i], cardId: cards[i] })
+            }
+            root.currentPlayerIndex = currentPlayerIndex
+        }
+
+        function onStateUpdate(discardTop, drawCount, currentPlayerIndex, handCounts) {
+            if (discardTop && discardTop.length > 0) {
+                root.lastDiscardId = discardTop
+                root.lastDiscard = "qrc:/assets/images/cards/" + discardTop
+            }
+            root.currentPlayerIndex = currentPlayerIndex
+            root.handCounts = handCounts
+        }
+
+        function onCardPlayed(playerIndex, card) {
+            if (playerIndex === root.yourIndex) {
+                removeCardFromHand(card)
+            } else {
+                infoBanner.show("Gegner hat gespielt.")
+            }
+        }
     }
 
     Rectangle { anchors.fill: parent; color: "#ff9fa0" }
@@ -122,25 +157,16 @@ Item {
             height: 180
             text: "Karte\nziehen"
             font.pixelSize: 16
-            enabled: !mustSayUno
+            enabled: !mustSayUno && isYourTurn()
 
             background: Rectangle { color: "#d9d9d9"; border.color: "black"; border.width: 2; radius: 8 }
 
             onClicked: {
-                // 1 Karte zufällig ziehen
-                var c = cardService.draw()
-                if (c === "") {
-                    infoBanner.show("Keine Karten gefunden (Resources?)")
+                if (!isYourTurn()) {
+                    infoBanner.show("Nicht dein Zug.")
                     return
                 }
-                handModel.append({ src: c })
-
-                // wenn man gezogen hat und vorher UNO offen war, reset (optional)
-                if (mustSayUno) {
-                    mustSayUno = false
-                    unoConfirmed = false
-                    unoTimer.stop()
-                }
+                gameClient.drawCards(1)
             }
         }
     }
@@ -215,23 +241,15 @@ Item {
                         cursorShape: Qt.PointingHandCursor
 
                         onClicked: {
-                            // Karte spielen -> Ablage
-                            root.lastDiscard = model.src
-                            handModel.remove(index)
-
-                            // UNO-Logik nach dem Spielen
-                            if (root.handCount === 1) {
-                                root.mustSayUno = true
-                                root.unoConfirmed = false
-                                unoTimer.restart()
-                                infoBanner.show("UNO drücken!")
-                            } else {
-                                if (root.mustSayUno && root.handCount !== 1) {
-                                    root.mustSayUno = false
-                                    root.unoConfirmed = false
-                                    unoTimer.stop()
-                                }
+                            if (!isYourTurn()) {
+                                infoBanner.show("Nicht dein Zug.")
+                                return
                             }
+                            if (!isLegalCard(model.cardId)) {
+                                infoBanner.show("Diese Karte ist nicht erlaubt.")
+                                return
+                            }
+                            gameClient.playCard(model.cardId)
                         }
                     }
                 }
@@ -255,6 +273,9 @@ Item {
             delegate: Item {
                 width: 90
                 height: 130
+                property int globalIndex: index < root.yourIndex ? index : index + 1
+                property bool showCount: globalIndex === activeOpponentIndex()
+                property int cardCount: root.handCounts.length > globalIndex ? root.handCounts[globalIndex] : 0
 
                 Rectangle {
                     anchors.fill: parent
@@ -270,6 +291,15 @@ Item {
                         fillMode: Image.PreserveAspectFit
                         smooth: true
                     }
+                }
+
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.bottom
+                    anchors.topMargin: 6
+                    text: showCount ? (cardCount + " Karten") : "?"
+                    font.pixelSize: 16
+                    color: "black"
                 }
             }
         }
@@ -287,24 +317,78 @@ Item {
         onTriggered: {
             if (root.mustSayUno && !root.unoConfirmed) {
                 root.mustSayUno = false
-
-                for (var i = 0; i < root.unoPenaltyCards; i++) {
-                    var c = cardService.draw()
-                    if (c !== "") handModel.append({ src: c })
-                }
-
-                infoBanner.show("UNO vergessen! +" + root.unoPenaltyCards + " Karten")
+                infoBanner.show("UNO vergessen!")
             }
         }
     }
 
-    // Start-Hand (zum Test)
-    Component.onCompleted: {
-        cardService.resetDeck()
-        handModel.clear()
-        for (var i = 0; i < 7; i++) {
-            var c = cardService.draw()
-            if (c !== "") handModel.append({ src: c })
+    function isYourTurn() {
+        return root.playersCount > 0 && root.currentPlayerIndex === root.yourIndex
+    }
+
+    function activeOpponentIndex() {
+        if (root.playersCount === 0) {
+            return -1
         }
+        if (root.currentPlayerIndex === root.yourIndex) {
+            return (root.yourIndex + 1) % root.playersCount
+        }
+        return root.currentPlayerIndex
+    }
+
+    function removeCardFromHand(cardId) {
+        for (var i = 0; i < handModel.count; i++) {
+            if (handModel.get(i).cardId === cardId) {
+                handModel.remove(i)
+                handlePostPlay()
+                return
+            }
+        }
+    }
+
+    function handlePostPlay() {
+        if (root.handCount === 1) {
+            root.mustSayUno = true
+            root.unoConfirmed = false
+            unoTimer.restart()
+            infoBanner.show("UNO drücken!")
+        } else {
+            if (root.mustSayUno && root.handCount !== 1) {
+                root.mustSayUno = false
+                root.unoConfirmed = false
+                unoTimer.stop()
+            }
+        }
+    }
+
+    function parseCard(cardId) {
+        var base = cardId
+        var dot = base.lastIndexOf(".")
+        if (dot >= 0) {
+            base = base.slice(0, dot)
+        }
+        var parts = base.split("_")
+        if (parts.length === 0) {
+            return { color: "", value: "", wild: false }
+        }
+        if (parts[0] === "Extra") {
+            return { color: "Extra", value: parts.slice(1).join("_"), wild: true }
+        }
+        return { color: parts[0], value: parts.slice(1).join("_"), wild: false }
+    }
+
+    function isLegalCard(cardId) {
+        if (!root.lastDiscardId || root.lastDiscardId.length === 0) {
+            return true
+        }
+        var playInfo = parseCard(cardId)
+        if (playInfo.wild) {
+            return true
+        }
+        var topInfo = parseCard(root.lastDiscardId)
+        if (topInfo.wild) {
+            return true
+        }
+        return playInfo.color === topInfo.color || playInfo.value === topInfo.value
     }
 }
