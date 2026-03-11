@@ -6,12 +6,14 @@
 #include <QDateTime>
 
 namespace {
+
 struct CardInfo {
     QString color;
     QString value;
     bool isWild = false;
 };
 
+//Liest die Info aus den Kartennummern aus, z.B. "Blau" und setzt diese in die CardInfo struktur ein.
 CardInfo parseCardInfo(const QString& cardName)
 {
     QString base = cardName;
@@ -37,6 +39,7 @@ CardInfo parseCardInfo(const QString& cardName)
 }
 } // namespace
 
+//Hauptfunktion des Servers, startet die Verbindungsannahme und gibt ein Debug aus
 Server::Server(QObject* parent) : QObject(parent)
 {
     connect(&m_server, &QTcpServer::newConnection, this, &Server::onNewConnection);
@@ -48,6 +51,7 @@ Server::Server(QObject* parent) : QObject(parent)
     qInfo() << "[NET] Server listening on port" << port;
 }
 
+//Wenn ein Client sich mit dem Server verbindet, wird hier die Clientverbindung angenommen und im Terminal ausgegeben
 void Server::onNewConnection()
 {
     while (m_server.hasPendingConnections()) {
@@ -62,6 +66,7 @@ void Server::onNewConnection()
     }
 }
 
+//Wenn sich ein Nutzer disconnected, wird er hier aus der Empfänger Liste entfernt und falls das Spiel leer ist wird das Spiel geschlossen
 void Server::onDisconnected(QTcpSocket* sock)
 {
     m_buffers.remove(sock);
@@ -81,6 +86,7 @@ void Server::onDisconnected(QTcpSocket* sock)
     sock->deleteLater();
 }
 
+//Liest alle gesendeten Daten vom Client, verarbeitet Sie und sendet diese an handleMessage weiter
 void Server::onReadyRead(QTcpSocket* sock)
 {
     QByteArray& buf = m_buffers[sock];
@@ -106,6 +112,7 @@ void Server::onReadyRead(QTcpSocket* sock)
     }
 }
 
+//Handled die Messages, differenziert die fälle "Create, Join, Start, Karte ziehen, Karte legen, Uno deklarieren" und ruft die nötigen Methoden zur Weiterverarbeitung auf
 void Server::handleMessage(QTcpSocket* sock, const QJsonObject& msg)
 {
     const QString type = msg.value("type").toString();
@@ -161,6 +168,7 @@ void Server::handleMessage(QTcpSocket* sock, const QJsonObject& msg)
     sendJson(sock, QJsonObject{{"type","error"},{"message","Unknown message type"}});
 }
 
+//Nimmt die letzte Karte aus dem Array und gibt diese aus, Prüft ob der Nutzer aktuell dazu die Berechtigung hat
 void Server::drawCards(QTcpSocket* sock, int count)
 {
     if (count < 1) count = 1;
@@ -229,6 +237,7 @@ void Server::drawCards(QTcpSocket* sock, int count)
             << "remaining=" << g->deck.size();
 }
 
+//Sendet die Nachricht an den Client
 void Server::sendJson(QTcpSocket* sock, const QJsonObject& obj)
 {
     const QByteArray payload = QJsonDocument(obj).toJson(QJsonDocument::Compact) + "\n";
@@ -236,11 +245,13 @@ void Server::sendJson(QTcpSocket* sock, const QJsonObject& obj)
     sock->flush();
 }
 
+//Indexiert jeden Spieler
 int Server::indexOfPlayer(GameState* g, QTcpSocket* sock) const
 {
     return g ? g->players.indexOf(sock) : -1;
 }
 
+//Prüft ob eine Karte gelegt werden darf, bevor der Spieler sie legt
 bool Server::isCardLegal(const QString& card, const QString& topDiscard, const QString& currentColor) const
 {
     if (topDiscard.isEmpty())
@@ -257,6 +268,7 @@ bool Server::isCardLegal(const QString& card, const QString& topDiscard, const Q
     return playInfo.color == topInfo.color || playInfo.value == topInfo.value;
 }
 
+//Erhöht den Index bei mehreren Personen
 int Server::advanceIndex(int startIndex, int steps, int direction, int playerCount) const
 {
     if (playerCount <= 0)
@@ -269,6 +281,7 @@ int Server::advanceIndex(int startIndex, int steps, int direction, int playerCou
     return idx;
 }
 
+//Übernimmt die Funktion, die gezogene Karte in das Deck des Spielers zu legen
 QStringList Server::drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count)
 {
     QStringList drawn;
@@ -287,6 +300,7 @@ QStringList Server::drawCardsToPlayer(GameState* g, QTcpSocket* sock, int count)
     return drawn;
 }
 
+//Wenn das Deck leer ist, wird es erneut befüllt
 void Server::refillDeck(GameState* g)
 {
     if (!g || !g->deck.isEmpty())
@@ -303,6 +317,7 @@ void Server::refillDeck(GameState* g)
     appendLog(g, "reshuffle", -1, QString("deck=%1").arg(g->deck.size()));
 }
 
+//Logged alle Details des Spiels
 void Server::appendLog(GameState* g, const QString& event, int playerIndex, const QString& detail)
 {
     if (!g) return;
@@ -316,6 +331,7 @@ void Server::appendLog(GameState* g, const QString& event, int playerIndex, cons
                             cleanedDetail));
 }
 
+//Wenn der Nutzer den "UNO" Button nicht betätigt, wird er bestraft
 void Server::applyUnoPenaltyIfNeeded(GameState* g, int currentPlayerIndex)
 {
     if (!g) return;
@@ -347,6 +363,7 @@ void Server::applyUnoPenaltyIfNeeded(GameState* g, int currentPlayerIndex)
     g->pendingUnoDeclared = false;
 }
 
+//Gibt jedem Client die Info, welche Karte als letztes gespielt wurde.
 void Server::sendStateUpdate(GameState* g, const QString& lastPlayedCard, int playedBy)
 {
     if (!g) return;
@@ -374,6 +391,7 @@ void Server::sendStateUpdate(GameState* g, const QString& lastPlayedCard, int pl
         sendJson(p, state);
 }
 
+//Erstellt einen 4 Stelligen Spielcode
 QString Server::createCode() const
 {
     static const char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -386,12 +404,14 @@ QString Server::createCode() const
     return code;
 }
 
+//Greift auf das Spiel anhand des Codes zu
 GameState* Server::getGame(const QString& code)
 {
     if (!m_games.contains(code)) return nullptr;
     return &m_games[code];
 }
 
+//erstellt ein neues Spiel
 void Server::createGame(QTcpSocket* hostSock)
 {
     if (m_socketToGame.contains(hostSock)) {
@@ -422,6 +442,7 @@ void Server::createGame(QTcpSocket* hostSock)
     sendJson(hostSock, QJsonObject{{"type","game_created"},{"code",code}});
 }
 
+//Tritt einem Spiel bei anhand des Codes
 void Server::joinGame(QTcpSocket* sock, const QString& code)
 {
     if (m_socketToGame.contains(sock)) {
@@ -448,6 +469,7 @@ void Server::joinGame(QTcpSocket* sock, const QString& code)
     qInfo() << "[GAME]" << code << "player joined, total=" << g->players.size();
 }
 
+//Misch das Kartendeck durch
 void Server::shuffle(QStringList& list) const
 {
     for (int i = list.size() - 1; i > 0; --i) {
@@ -456,6 +478,7 @@ void Server::shuffle(QStringList& list) const
     }
 }
 
+//Liste, welche Karten es alle gibt.
 QStringList Server::buildDeckFromStaticList() const
 {
     // Einheitliches Naming:
@@ -488,7 +511,7 @@ QStringList Server::buildDeckFromStaticList() const
     };
 }
 
-
+//Startet das Spiel, sendet den Clients alle Infos.
 void Server::startGame(QTcpSocket* sock, const QString& code)
 {
     GameState* g = getGame(code);
@@ -576,6 +599,7 @@ void Server::startGame(QTcpSocket* sock, const QString& code)
     }
 }
 
+//wenn eine Karte gespielt wird, wird hier die Karte ausgelesen und die Infos an die Clients gesendet
 void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chosenColor)
 {
     const QString code = m_socketToGame.value(sock);
@@ -716,6 +740,7 @@ void Server::playCard(QTcpSocket* sock, const QString& card, const QString& chos
     qInfo() << "[GAME]" << code << "play_card player=" << playerIndex << "card=" << card;
 }
 
+// Wenn der Client Uno deklariet, wird es hier vermerkt, damit er nicht bestraft wird,
 void Server::declareUno(QTcpSocket* sock)
 {
     const QString code = m_socketToGame.value(sock);
