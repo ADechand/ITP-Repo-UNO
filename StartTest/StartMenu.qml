@@ -23,7 +23,7 @@ Item {
         anchors.centerIn: parent
         spacing: 40
 
-        // großer Button
+        //Oberer Button mit dem man in das Spielhost Fenster kommt
         Button {
             id: hostBtn
             text: "Spiel hosten"
@@ -37,11 +37,11 @@ Item {
                 border.color: "black"
                 border.width: 2
             }
-
+            //Hostfenster wird geöffnet
             onClicked: root.hostGame()
         }
 
-        // kleiner Button (aber trotzdem exakt mittig)
+        //Unterer Button mit dem man in das Spielbeitritts Fenster kommt
         Button {
             id: joinBtn
             text: "Mit Code beitreten"
@@ -55,7 +55,7 @@ Item {
                 border.color: "black"
                 border.width: 2
             }
-
+            //Spielbeitritts Fenster wird geöffnet
             onClicked: root.joinWithCode()
         }
     }

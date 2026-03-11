@@ -15,7 +15,7 @@ Item {
     signal joinGame()
 
 
-
+    // Reagiere zentral auf Verbindungen
     Connections {
         target: gameClient
         function onConnectedChanged() {
@@ -27,7 +27,7 @@ Item {
         }
     }
 
-
+    //Setzt das Hintergrundbild
     Image {
         anchors.fill: parent
         source: "qrc:/assets/images/UNOHintergrund.jpg"
@@ -35,6 +35,7 @@ Item {
         smooth: true
     }
 
+    //Zurück Button zur Host/Join auswahl
     Button {
         text: "Zurueck"
         anchors.left: parent.left
@@ -55,6 +56,7 @@ Item {
         anchors.centerIn: parent
         anchors.verticalCenterOffset: 20
 
+        //Text der hinweist, dass das Feld darunter für den Spielernamen ist
         Rectangle {
             width: 200; height: 34
             x: (form.width - width)/2
@@ -65,6 +67,7 @@ Item {
             Text { anchors.centerIn: parent; text: "Spielername"; font.pixelSize: 18; color: "black" }
         }
 
+        //Textfeld für den Spielernamen
         TextField {
             id: nameField
             width: form.width
@@ -77,6 +80,7 @@ Item {
             background: Rectangle { color: "white"; border.width: 2; border.color: "black" }
         }
 
+        //Text der hinweist, dass das Feld daneben für den Spielcode ist
         Rectangle {
             width: 240; height: 44
             x: 30
@@ -87,6 +91,7 @@ Item {
             Text { anchors.centerIn: parent; text: "Spielcode:"; font.pixelSize: 18; color: "black" }
         }
 
+        //TextFeld um den Spielcode einzugeben
         TextField {
             id: codeField
             width: 220
@@ -105,6 +110,7 @@ Item {
             }
         }
 
+        //Button um dem Spiel beizutreten
         Button {
             id: joinBtn
             text: "Spiel beitreten"

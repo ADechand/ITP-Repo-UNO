@@ -12,6 +12,7 @@ Window {
     property string serverHost: "127.0.0.1"
     property int serverPort: 12345
 
+    //Start Fenster mit der "Spiel hosten" oder "Mit Code beitreten" auswahl
     StackView {
         id: stack
         anchors.fill: parent
@@ -23,6 +24,7 @@ Window {
         }
     }
 
+    //startPageComponent ist das Fenster des Spielhostings
     Component {
         id: startPageComponent
         StartPage {
@@ -33,6 +35,7 @@ Window {
         }
     }
 
+    //joinPageComponent ist das Fenster des Spielbeitritts
     Component {
         id: joinPageComponent
         JoinPage {
@@ -43,6 +46,7 @@ Window {
         }
     }
 
+    //gamePageComponent ist das Fenster, in dem das UNO Spiel stattfindet.
     Component {
         id: gamePageComponent
         GamePage {
@@ -58,13 +62,14 @@ Window {
         stack.push(gamePageComponent)
     }
 
+    //GameClient regelt den Austausch zwischen Server und Client
     Connections {
         target: gameClient
 
-        function onInfo(msg) { toast.show(msg) }
+        //function onInfo(msg) { toast.show(msg) }
         function onError(msg) { toast.show("Server: " + msg) }
 
-        function onGameCreated(code) { toast.show("Spiel erstellt: " + code) }
+        //function onGameCreated(code) { toast.show("Spiel erstellt: " + code) }
         function onJoinOk(code) { toast.show("Beitritt OK: " + code) }
 
         function onGameStateChanged() {
@@ -74,12 +79,14 @@ Window {
         }
     }
 
+    //LinkService setzt den Link ins Clipboard
     Connections {
         target: linkService
         function onInfo(message) { toast.show(message) }
         function onError(message) { toast.show(message) }
     }
 
+    //Zeigt die ganzen Toasts an, z.B "Beitritt Ok..."
     Popup {
         id: toast
         modal: false

@@ -38,13 +38,14 @@ Item {
         return s
     }
 
+    //Erstellt den Pfad zu jeder Karte
     function fileToQrc(fileName) {
         var n = normalizeCardName(fileName)
         if (n.length === 0) return ""
         return cardBase + n
     }
 
-
+    //Berechnet und setzt den Stand der Variablen die Fürs Ende benötigt werden (opponentsCount, endPopupShown) am Ende des Spiels
     function applyStateFromClient() {
         if (!gameClient.hasGameInit) return
 
@@ -58,8 +59,6 @@ Item {
         if (lastHandCount !== 1) {
             unoDeclared = false
         }
-
-        infoBanner.show("Hand: " + lastHandCount + " | Ablage: " + gameClient.discardTop + " | Deck: " + lastDrawCount)
 
         if (gameClient.finished) {
             if (gameClient.winnerIndex === gameClient.yourIndex) {
@@ -78,16 +77,20 @@ Item {
         }
     }
 
+    //Ruft erst am Ende des Component die Methode darüber auf, um die ganzen Variablen fürs Spielende zu setzen
     Component.onCompleted: applyStateFromClient()
 
+    // Reagiere zentral auf Verbindungen
     Connections {
         target: gameClient
         function onGameStateChanged() { applyStateFromClient() }
         function onError(msg) { infoBanner.show("Server: " + msg) }
     }
 
+    //Hintergrundfarbe (Pink)
     Rectangle { anchors.fill: parent; color: "#ff9fa0" }
 
+    //Zurück Button um das Spiel zu verlassen
     Button {
         text: "Go Back"
         anchors.left: parent.left
@@ -98,27 +101,29 @@ Item {
         onClicked: root.goBack()
     }
 
+    //InfoBanner, wird angezeigt, wenn man eine Karte legt, obwohl man kein Zug hat oder wenn der Server ein fehler hat, etc.
     Rectangle {
-        id: infoBanner
-        width: 720; height: 44; radius: 8
-        color: "white"; border.color: "black"; border.width: 2
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
-        anchors.topMargin: 10
-        opacity: 0
-        visible: opacity > 0
+            id: infoBanner
+            width: 720; height: 44; radius: 8
+            color: "white"; border.color: "black"; border.width: 2
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: 10
+            opacity: 0
+            visible: opacity > 0
 
-        Text { id: infoText; anchors.centerIn: parent; font.pixelSize: 16; color: "black"; text: "" }
+            Text { id: infoText; anchors.centerIn: parent; font.pixelSize: 16; color: "black"; text: "" }
 
-        function show(msg) {
-            infoText.text = msg
-            infoBanner.opacity = 1
-            hideTimer.restart()
+            function show(msg) {
+                infoText.text = msg
+                infoBanner.opacity = 1
+                hideTimer.restart()
+            }
+
+            Timer { id: hideTimer; interval: 1800; repeat: false; onTriggered: infoBanner.opacity = 0 }
         }
 
-        Timer { id: hideTimer; interval: 1800; repeat: false; onTriggered: infoBanner.opacity = 0 }
-    }
-
+    //Popup Fenster um die Farben auszuwählen bei Extra Karten
     Popup {
         id: colorPicker
         modal: true
@@ -212,6 +217,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             color: "white"; border.color: "black"; border.width: 2
 
+            // Zuletzt gelegte Karte in der Mitte des Bildschirms
             // Discard (mit Fallback .png <-> .jpg falls mal inkonsistent)
             Image {
                 id: discardImg
@@ -238,6 +244,7 @@ Item {
             }
         }
 
+        //Button um Karten zu ziehen
         Button {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
@@ -327,6 +334,7 @@ Item {
         }
     }
 
+    //UNO Button der erst erscheint wenn man 1 Karte übrig hat
     Button {
         id: unoButton
         text: "UNO!"
@@ -353,6 +361,7 @@ Item {
         }
     }
 
+    //Dialogfeld am Ende um die File zu speichern
     FileDialog {
         id: logFileDialog
         title: "CSV speichern"
@@ -366,7 +375,7 @@ Item {
             }
         }
     }
-
+    //Zeigt das Popup am Ende des Spiels an, wo drinnen steht ob man gewonnen oder verloren hat
     Popup {
         id: endGamePopup
         modal: true
@@ -456,12 +465,14 @@ Item {
         }
     }
 
+    //Bestimmt, ob es dein Zug ist oder nicht
     function isYourTurn() {
         return gameClient.hasGameInit &&
                !gameClient.finished &&
                gameClient.currentPlayerIndex === gameClient.yourIndex
     }
 
+    //Prüft den aktuellen Kartenbestand des Gegners
     function activeOpponentIndex() {
         if (!gameClient.hasGameInit || gameClient.players === 0) {
             return -1
@@ -472,6 +483,7 @@ Item {
         return gameClient.currentPlayerIndex
     }
 
+    //Parsed die Karten die übergeben werden
     function parseCard(cardId) {
         var base = normalizeCardName(cardId)
         var dot = base.lastIndexOf(".")
@@ -488,6 +500,7 @@ Item {
         return { color: parts[0], value: parts.slice(1).join("_"), wild: false }
     }
 
+    //Prüft ob die Karte gelegt werden darf (Farbe, Nummer, Extra)
     function isLegalCard(cardId) {
         if (!lastDiscardId || lastDiscardId.length === 0) {
             return true
@@ -503,11 +516,13 @@ Item {
         return playInfo.color === topInfo.color || playInfo.value === topInfo.value
     }
 
+    //Schaut ob es eine Extra Karte oder normale Karte ist, da bei Extra Karten keine Farbe benötigt wird.
     function requiresColor(cardId) {
         var info = parseCard(cardId)
         return info.wild
     }
 
+    //Lässt den Nutzer die Farbe auswählen, wenn er eine Extra Karte mit Farbwechsel legt
     function chooseColor(colorName) {
         if (pendingWildCard.length === 0) {
             colorPicker.close()
@@ -518,6 +533,7 @@ Item {
         colorPicker.close()
     }
 
+    //Erstellt den Graphen der CSV am Ende des Spiels, um zu sehen welcher Spielen wann wie viele Karten hatte.
     function buildGraphData(logCsv, playerCount) {
         if (!logCsv || logCsv.length === 0 || playerCount === 0) {
             return []

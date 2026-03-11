@@ -1,0 +1,2 @@
+/home/user/Projekte_Qt/UNO/ITP-Repo-UNO/StartTest/build/Desktop_Qt_6_9_2-Debug/appStartTest_autogen/include/../EWIEGA46WW/moc_gameclient.cpp.json
+/home/user/Projekte_Qt/UNO/ITP-Repo-UNO/StartTest/build/Desktop_Qt_6_9_2-Debug/appStartTest_autogen/include/../EWIEGA46WW/moc_linkservice.cpp.json

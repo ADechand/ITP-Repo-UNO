@@ -1,0 +1,144 @@
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+
+Item {
+    id: root
+    anchors.fill: parent
+
+    property string serverHost: "127.0.0.1"
+    property int serverPort: 12345
+    property string _pendingJoinCode: ""
+    // Code aus dem TextField (Main.qml greift darauf zu)
+    property string gameCode: ""
+
+    signal goBack()
+    signal joinGame()
+
+
+    // Reagiere zentral auf Verbindungen
+    Connections {
+        target: gameClient
+        function onConnectedChanged() {
+            if (gameClient.connected && root._pendingJoinCode.length > 0) {
+                const c = root._pendingJoinCode
+                root._pendingJoinCode = ""
+                gameClient.joinGame(c)
+            }
+        }
+    }
+
+    //Setzt das Hintergrundbild
+    Image {
+        anchors.fill: parent
+        source: "qrc:/assets/images/UNOHintergrund.jpg"
+        fillMode: Image.PreserveAspectCrop
+        smooth: true
+    }
+
+    //Zurück Button zur Host/Join auswahl
+    Button {
+        text: "Zurueck"
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.margins: 18
+        width: 130
+        height: 44
+        font.pixelSize: 16
+
+        background: Rectangle { color: "white"; border.color: "black"; border.width: 2 }
+        onClicked: root.goBack()
+    }
+
+    Item {
+        id: form
+        width: 560
+        height: 290
+        anchors.centerIn: parent
+        anchors.verticalCenterOffset: 20
+
+        //Text der hinweist, dass das Feld darunter für den Spielernamen ist
+        Rectangle {
+            width: 200; height: 34
+            x: (form.width - width)/2
+            y: 0
+            color: "white"
+            border.width: 2
+            border.color: "black"
+            Text { anchors.centerIn: parent; text: "Spielername"; font.pixelSize: 18; color: "black" }
+        }
+
+        //Textfeld für den Spielernamen
+        TextField {
+            id: nameField
+            width: form.width
+            height: 60
+            x: 0
+            y: 26
+            font.pixelSize: 20
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            background: Rectangle { color: "white"; border.width: 2; border.color: "black" }
+        }
+
+        //Text der hinweist, dass das Feld daneben für den Spielcode ist
+        Rectangle {
+            width: 240; height: 44
+            x: 30
+            y: 110
+            color: "#d9d9d9"
+            border.width: 2
+            border.color: "black"
+            Text { anchors.centerIn: parent; text: "Spielcode:"; font.pixelSize: 18; color: "black" }
+        }
+
+        //TextFeld um den Spielcode einzugeben
+        TextField {
+            id: codeField
+            width: 220
+            height: 44
+            x: 270
+            y: 110
+            font.pixelSize: 18
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            background: Rectangle { color: "white"; border.width: 2; border.color: "black" }
+
+            onTextChanged: {
+                const up = text.toUpperCase()
+                if (text !== up) text = up
+                root.gameCode = text.trim()
+            }
+        }
+
+        //Button um dem Spiel beizutreten
+        Button {
+            id: joinBtn
+            text: "Spiel beitreten"
+            width: 520
+            height: 62
+            x: (form.width - width)/2
+            y: 170
+            font.pixelSize: 22
+
+            background: Rectangle { color: "#75f0ff"; border.width: 2; border.color: "black" }
+
+            enabled: nameField.text.trim().length > 0 && codeField.text.trim().length > 0
+            opacity: enabled ? 1.0 : 0.65
+
+            onClicked: {
+                const code = root.gameCode.trim()
+                if (code.length === 0) return
+
+                // Wenn nicht verbunden: verbinden und JOIN vormerken
+                if (!gameClient.connected) {
+                    root._pendingJoinCode = code
+                    gameClient.connectToServer(root.serverHost, root.serverPort)
+                    return
+                }
+
+                gameClient.joinGame(code)
+            }
+
+        }
+    }
+}

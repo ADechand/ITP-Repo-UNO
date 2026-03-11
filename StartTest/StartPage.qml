@@ -15,16 +15,18 @@ Item {
     property bool _pendingCreate: false
     property bool _pendingStart: false
 
-    // Reagiere zentral auf Verbindung
+    // Reagiere zentral auf Verbindungen
     Connections {
         target: gameClient
         function onConnectedChanged() {
             if (!gameClient.connected) return
 
+            //Erstellt ein Spiel wenn es noch nicht erstellt wurde
             if (root._pendingCreate) {
                 root._pendingCreate = false
                 gameClient.createGame()
             }
+            //Startet das Spiel wenn noch kein Hostcode vorhanden ist
             if (root._pendingStart) {
                 root._pendingStart = false
                 if (root.hostCode.trim().length > 0)
@@ -32,6 +34,7 @@ Item {
             }
         }
 
+        //Kopiert Code in die Zwischenablage
         function onGameCreated(code) {
             root.hostCode = code
             // direkt kopieren + Info kommt als Toast (Main.qml hört auf linkService.info)
@@ -39,6 +42,7 @@ Item {
         }
     }
 
+    //Setzt das Hintergrundbild
     Image {
         anchors.fill: parent
         source: "qrc:/assets/images/UNOHintergrund.jpg"
@@ -46,6 +50,7 @@ Item {
         smooth: true
     }
 
+    //Zurück Button zur Host/Join auswahl
     Button {
         text: "Zurueck"
         anchors.left: parent.left
@@ -88,6 +93,7 @@ Item {
         }
     }
 
+    //Button um zur Skinauswahl zu kommen
     Button {
         id: skinsBtn
         text: "Skins"
@@ -101,6 +107,7 @@ Item {
         background: Rectangle { color: "#e6ff6a"; border.color: "black"; border.width: 2 }
     }
 
+
     Item {
         id: form
         width: 560
@@ -108,6 +115,7 @@ Item {
         anchors.centerIn: parent
         anchors.verticalCenterOffset: 40
 
+        //Text der hinweist, dass das Feld darunter für den Spielernamen ist
         Rectangle {
             width: 200; height: 34
             x: (form.width - width) / 2
@@ -118,6 +126,7 @@ Item {
             Text { anchors.centerIn: parent; text: "Spielername"; font.pixelSize: 18; color: "black" }
         }
 
+        //Textfeld für den Spielernamen
         TextField {
             id: nameField
             width: form.width
@@ -130,6 +139,7 @@ Item {
             background: Rectangle { color: "white"; border.width: 2; border.color: "black" }
         }
 
+        //Text, der hinweist, dass das Feld rechts daneben für die Spieleranzahl ist
         Rectangle {
             width: 240; height: 44
             x: 30
@@ -140,6 +150,7 @@ Item {
             Text { anchors.centerIn: parent; text: "Spieleranzahl:"; font.pixelSize: 18; color: "black" }
         }
 
+        //Feld, bei dem man die Spielerzahl eingibt, Spinbox ermöglicht zeigt Pfeile an, um die Zahl anzupassen
         SpinBox {
             id: countSpin
             width: 220
@@ -152,6 +163,7 @@ Item {
             background: Rectangle { color: "white"; border.width: 2; border.color: "black" }
         }
 
+        //Button ganz Unten, der das Spiel startet
         Button {
             id: startBtn
             text: "Spiel starten"
@@ -163,6 +175,7 @@ Item {
             background: Rectangle { color: "#75f0ff"; border.width: 2; border.color: "black" }
 
             onClicked: {
+                //Prüft ob das Spiel schon erstellt wurde
                 const code = root.hostCode.trim()
                 if (code.length === 0) {
                     // Noch kein Spiel erstellt -> Hinweis
@@ -170,17 +183,20 @@ Item {
                     return
                 }
 
+                //Prüft ob Client verbunden ist
                 if (!gameClient.connected) {
                     root._pendingStart = true
                     gameClient.connectToServer(root.serverHost, root.serverPort)
                     return
                 }
 
+                //Beginnt das Spiel
                 gameClient.startGame(code)
             }
         }
     }
 
+    //Stellt sicher dass der Client zum Server verbunden ist
     Component.onCompleted: {
         if (!gameClient.connected) {
             gameClient.connectToServer(root.serverHost, root.serverPort)
